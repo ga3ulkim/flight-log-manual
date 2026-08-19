@@ -21,6 +21,12 @@ export interface AirportSearchCatalog {
   findByIata(iata: string): AirportSearchEntry | undefined;
 }
 
+export interface AirportSearchAlias {
+  readonly alias: string;
+  /** Ordering is editorial and is preserved for an exact alias match. */
+  readonly iatas: readonly string[];
+}
+
 export interface AirportSearchCatalogOptions {
   /** The first locale supplies countryName; every locale is searchable. */
   readonly countryLocales?: readonly string[];
@@ -28,6 +34,8 @@ export interface AirportSearchCatalogOptions {
     countryCode: string,
     locale: string,
   ) => string | undefined;
+  /** Optional, explicitly reviewed aliases kept outside generated data. */
+  readonly aliases?: readonly AirportSearchAlias[];
 }
 
 export const DEFAULT_AIRPORT_SEARCH_LIMIT = 8;
@@ -51,6 +59,20 @@ interface PreparedAirport {
   readonly municipality: string;
   readonly countryAliases: readonly string[];
   readonly countryText: string;
+  readonly aliases: readonly PreparedAlias[];
+}
+
+interface PreparedAlias {
+  readonly text: string;
+  readonly aliasOrder: number;
+  readonly iataOrder: number;
+}
+
+interface AirportMatch {
+  readonly rank: number;
+  readonly orderGroup: number;
+  readonly aliasOrder: number;
+  readonly iataOrder: number;
 }
 
 function normalizeSearchText(value: string): string {
@@ -99,26 +121,100 @@ function isWordPrefix(value: string, query: string): boolean {
   return value.startsWith(query) || value.includes(` ${query}`);
 }
 
-function matchRank(airport: PreparedAirport, query: string): number | null {
-  // The bucket ordering is intentional: a code is always more useful than a
-  // textual coincidence, with exact code matches ahead of code prefixes.
-  if (airport.iata === query) return 0;
-  if (airport.iata.startsWith(query)) return 1;
-  if (airport.name === query) return 2;
-  if (isWordPrefix(airport.name, query)) return 3;
-  if (airport.municipality === query) return 4;
-  if (isWordPrefix(airport.municipality, query)) return 5;
-  if (airport.countryAliases.includes(query)) return 6;
+function firstMatchingAlias(
+  aliases: readonly PreparedAlias[],
+  predicate: (alias: string) => boolean,
+): PreparedAlias | undefined {
+  let best: PreparedAlias | undefined;
+  for (const alias of aliases) {
+    if (!predicate(alias.text)) continue;
+    if (
+      !best
+      || alias.aliasOrder < best.aliasOrder
+      || (
+        alias.aliasOrder === best.aliasOrder
+        && alias.iataOrder < best.iataOrder
+      )
+    ) {
+      best = alias;
+    }
+  }
+  return best;
+}
+
+function aliasMatch(rank: number, alias: PreparedAlias): AirportMatch {
+  return {
+    rank,
+    orderGroup: 0,
+    aliasOrder: alias.aliasOrder,
+    iataOrder: alias.iataOrder,
+  };
+}
+
+function canonicalMatch(rank: number): AirportMatch {
+  return {
+    rank,
+    orderGroup: 0,
+    aliasOrder: 0,
+    iataOrder: 0,
+  };
+}
+
+function matchRank(airport: PreparedAirport, query: string): AirportMatch | null {
+  // Bucket ordering is intentional and public-facing: exact IATA, exact
+  // reviewed alias, prefixes, canonical matches, then substring matches.
+  if (airport.iata === query) return canonicalMatch(0);
+
+  const exactAlias = firstMatchingAlias(
+    airport.aliases,
+    (alias) => alias === query,
+  );
+  if (exactAlias) return aliasMatch(1, exactAlias);
+
+  if (airport.iata.startsWith(query)) return canonicalMatch(2);
+  const prefixAlias = firstMatchingAlias(
+    airport.aliases,
+    (alias) => isWordPrefix(alias, query),
+  );
+  if (prefixAlias) {
+    return {
+      ...aliasMatch(2, prefixAlias),
+      // Preserve IATA-prefix precedence within the shared prefix bucket.
+      orderGroup: 1,
+    };
+  }
+
+  if (airport.name === query) return canonicalMatch(3);
+  if (isWordPrefix(airport.name, query)) return canonicalMatch(4);
+  if (airport.municipality === query) return canonicalMatch(5);
+  if (isWordPrefix(airport.municipality, query)) return canonicalMatch(6);
+  if (airport.countryAliases.includes(query)) return canonicalMatch(7);
   if (
     airport.countryAliases.some((country) => isWordPrefix(country, query))
   ) {
-    return 7;
+    return canonicalMatch(8);
   }
-  if (airport.name.includes(query)) return 8;
-  if (airport.municipality.includes(query)) return 9;
-  if (airport.countryText.includes(query)) return 10;
-  if (airport.iata.includes(query)) return 11;
+
+  const substringAlias = firstMatchingAlias(
+    airport.aliases,
+    (alias) => alias.includes(query),
+  );
+  if (substringAlias) return aliasMatch(9, substringAlias);
+  if (airport.name.includes(query)) return canonicalMatch(10);
+  if (airport.municipality.includes(query)) return canonicalMatch(11);
+  if (airport.countryText.includes(query)) return canonicalMatch(12);
+  if (airport.iata.includes(query)) return canonicalMatch(13);
   return null;
+}
+
+function compareEditorialOrder(
+  left: { readonly airport: PreparedAirport; readonly match: AirportMatch },
+  right: { readonly airport: PreparedAirport; readonly match: AirportMatch },
+): number {
+  return left.match.orderGroup - right.match.orderGroup
+    || left.match.aliasOrder - right.match.aliasOrder
+    || left.match.iataOrder - right.match.iataOrder
+    || left.airport.entry.iata.localeCompare(right.airport.entry.iata, 'en');
 }
 
 /**
@@ -141,6 +237,21 @@ export function createAirportSearchCatalog(
     }
   >();
   const byIata = new Map<string, AirportSearchEntry>();
+  const aliasesByIata = new Map<string, PreparedAlias[]>();
+
+  options.aliases?.forEach(({ alias, iatas }, aliasOrder) => {
+    const text = normalizeSearchText(alias);
+    if (!text) return;
+    const seenIatas = new Set<string>();
+    iatas.forEach((rawIata, iataOrder) => {
+      const iata = rawIata.trim().toUpperCase();
+      if (!iata || seenIatas.has(iata)) return;
+      seenIatas.add(iata);
+      const aliases = aliasesByIata.get(iata) ?? [];
+      aliases.push({ text, aliasOrder, iataOrder });
+      aliasesByIata.set(iata, aliases);
+    });
+  });
 
   const prepared = tuples.map((tuple) => {
     const [rawIata, name, municipality, rawCountryCode] = tuple;
@@ -174,6 +285,7 @@ export function createAirportSearchCatalog(
       municipality: normalizeSearchText(municipality),
       countryAliases: country.searchable,
       countryText: country.searchable.join(' '),
+      aliases: aliasesByIata.get(iata) ?? [],
     } satisfies PreparedAirport;
   });
   prepared.sort((left, right) => left.entry.iata.localeCompare(right.entry.iata, 'en'));
@@ -188,18 +300,26 @@ export function createAirportSearchCatalog(
       const limit = resolveLimit(requestedLimit);
       if (!normalizedQuery || limit === 0) return [];
 
-      const buckets: PreparedAirport[][] = Array.from(
-        { length: 12 },
+      const buckets: Array<Array<{
+        readonly airport: PreparedAirport;
+        readonly match: AirportMatch;
+      }>> = Array.from(
+        { length: 14 },
         () => [],
       );
       for (const airport of prepared) {
-        const rank = matchRank(airport, normalizedQuery);
-        if (rank !== null) buckets[rank].push(airport);
+        const match = matchRank(airport, normalizedQuery);
+        if (match !== null) buckets[match.rank].push({ airport, match });
       }
 
       const results: AirportSearchEntry[] = [];
-      for (const bucket of buckets) {
-        for (const airport of bucket) {
+      for (const [rank, bucket] of buckets.entries()) {
+        // Only alias-bearing buckets need editorial ordering; canonical
+        // buckets retain the pre-sorted IATA order without another sort.
+        if (rank === 1 || rank === 2 || rank === 9) {
+          bucket.sort(compareEditorialOrder);
+        }
+        for (const { airport } of bucket) {
           results.push(airport.entry);
           if (results.length === limit) return results;
         }
@@ -235,9 +355,11 @@ let generatedCatalogPromise: Promise<AirportSearchCatalog> | undefined;
  * out of the initial map/dashboard bundle until an add/edit surface needs them.
  */
 export function loadAirportSearchCatalog(): Promise<AirportSearchCatalog> {
-  generatedCatalogPromise ??= import('../data/generated/airportSearch').then(
-    ({ GENERATED_AIRPORT_SEARCH_INDEX }) =>
-      createAirportSearchCatalog(GENERATED_AIRPORT_SEARCH_INDEX),
+  generatedCatalogPromise ??= import('./airportSearchData').then(
+    ({ GENERATED_AIRPORT_SEARCH_INDEX, REVIEWED_KOREAN_AIRPORT_ALIASES }) =>
+      createAirportSearchCatalog(GENERATED_AIRPORT_SEARCH_INDEX, {
+        aliases: REVIEWED_KOREAN_AIRPORT_ALIASES,
+      }),
   );
   generatedCatalogPromise.catch(() => {
     // A transient same-site chunk failure should not poison all future opens.

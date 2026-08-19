@@ -105,12 +105,20 @@
 .flc-btn:focus-visible,
 .flc-chip:focus-visible,
 .flc-zoom:focus-visible,
-.flc-route-hit:focus-visible,
 .flc-text-link:focus-visible,
 #manual-entry-title:focus-visible,
 #flight-log-title:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--flc-intl) 72%, white);
   outline-offset: 3px;
+}
+
+.flc-route-hit:focus-visible {
+  outline: none;
+}
+
+.flc-route-hit[tabindex="0"]:focus-visible + .flc-route-line {
+  stroke: color-mix(in srgb, var(--flc-intl) 72%, white);
+  stroke-width: 5px;
 }
 
 .flc-scroll {
@@ -311,33 +319,6 @@
   text-align: right;
 }
 
-.flc-storage-state {
-  display: grid;
-  place-items: center;
-}
-
-.flc-storage-card {
-  width: min(560px, 100%);
-  padding: clamp(24px, 5vw, 44px);
-  border: 1px solid var(--flc-line);
-  border-radius: 18px;
-  background: var(--flc-card);
-  box-shadow: 0 22px 70px rgba(34, 51, 63, 0.08);
-}
-
-.flc-storage-card h1 {
-  margin: 12px 0 10px;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(28px, 5vw, 42px);
-  font-weight: 500;
-}
-
-.flc-storage-card p {
-  margin: 0 0 22px;
-  color: var(--flc-ink-soft);
-  line-height: 1.65;
-}
-
 .flc-landing {
   display: grid;
   align-items: center;
@@ -403,9 +384,9 @@
 }
 
 .flc-notice button {
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   border: 0;
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.12);

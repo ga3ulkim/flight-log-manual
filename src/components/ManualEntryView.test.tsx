@@ -82,6 +82,8 @@ describe('manual entry view', () => {
     expect(markup).toContain('비행 기록을 추가해보세요.');
     expect(markup).toContain('+ 첫 비행 기록 추가');
     expect(markup).toContain('아직 추가한 비행이 없습니다.');
+    expect(markup).toContain('새로고침하면 초기화됩니다.');
+    expect(markup).not.toContain('IndexedDB');
     expect(markup).not.toContain('내 비행 기록 보기');
   });
 

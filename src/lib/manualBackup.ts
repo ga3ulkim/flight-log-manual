@@ -6,7 +6,7 @@ import type { ManualFlightRecord } from './manualFlight';
 import type {
   ManualFlightMergeResult,
   ManualFlightRepository,
-} from '../storage/manualFlightRepository';
+} from '../storage/sessionManualFlightRepository';
 
 export const MANUAL_BACKUP_FORMAT = 'personal-flight-log-backup';
 export const MANUAL_BACKUP_SCHEMA_VERSION = 1 as const;
@@ -160,8 +160,9 @@ export async function exportManualFlightBackup(
 }
 
 /**
- * Restore only after full validation. Replace is one atomic clear+put call;
- * merge keeps the current record unless the incoming updatedAt is newer.
+ * Restore only after full validation. Replace atomically swaps the current
+ * session archive; merge keeps the current record unless the incoming
+ * updatedAt is newer. Neither mode persists beyond this loaded page instance.
  */
 export async function restoreManualFlightBackup(
   repository: Pick<ManualFlightRepository, 'list' | 'replaceAll' | 'merge'>,

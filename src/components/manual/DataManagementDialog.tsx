@@ -62,10 +62,23 @@ interface LegacyPreview {
 
 const MAX_LOCAL_FILE_BYTES = 50 * 1024 * 1024;
 
+export const MANUAL_CLEAR_ALL_CONFIRMATION = Object.freeze({
+  title: '모든 비행 기록을 삭제할까요?',
+  description: '현재 세션의 수동 비행 기록이 모두 삭제되며, JSON 백업 없이는 되돌릴 수 없습니다.',
+  confirmLabel: '현재 기록 삭제',
+  requiredText: '모두 삭제',
+});
+
+export const MANUAL_SESSION_DATA_COPY = Object.freeze({
+  privacy: '비행 기록은 현재 페이지가 열려 있는 동안만 메모리에 유지됩니다. 새로고침하거나 페이지를 다시 열면 초기화됩니다. 계정이나 백엔드가 없고 비행 기록을 자동 전송하지 않으므로, 기록을 남겨두려면 JSON 백업 또는 CSV 내보내기를 사용하세요.',
+  restore: '파일을 먼저 검사한 뒤 현재 세션에만 불러옵니다. 새로고침하면 복원한 기록도 초기화됩니다.',
+  legacyImport: '이전 파일을 로컬에서 읽어 현재 세션에만 추가합니다. 새로고침하면 가져온 기록도 초기화됩니다.',
+});
+
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message
     ? error.message
-    : '작업을 완료하지 못했습니다. 파일과 브라우저 저장소를 확인해 주세요.';
+    : '작업을 완료하지 못했습니다. 파일과 현재 세션 기록을 확인해 주세요.';
 }
 
 function downloadText(content: string, filename: string, mimeType: string): void {
@@ -316,7 +329,7 @@ function DataManagementDialogSession({
     setStatus('');
     try {
       await onClearAll();
-      setStatus('이 브라우저의 모든 비행 기록을 삭제했습니다.');
+      setStatus('현재 세션의 모든 비행 기록을 삭제했습니다.');
       setConfirmation(null);
       setBackupPreview(null);
       setLegacyPreview(null);
@@ -331,8 +344,8 @@ function DataManagementDialogSession({
       <DialogShell
         open
         title="데이터 관리"
-        eyebrow="LOCAL ARCHIVE"
-        description={`현재 이 브라우저에 ${records.length}개의 비행 기록이 있습니다.`}
+        eyebrow="CURRENT SESSION"
+        description={`현재 페이지 세션에 ${records.length}개의 비행 기록이 있습니다.`}
         initialFocusRef={closeRef}
         dismissible={!busy}
         onRequestClose={onRequestClose}
@@ -360,18 +373,14 @@ function DataManagementDialogSession({
 
         <div className="manual-privacy-note">
           <strong>기록은 어디에 저장되나요?</strong>
-          <p>
-            비행 기록은 이 기기·이 브라우저의 IndexedDB에 저장됩니다. 이 앱은 기록을 서버나
-            계정으로 전송하지 않으며 기기 사이에 자동 동기화하지 않습니다. 브라우저 또는 사이트
-            데이터를 삭제하면 기록도 사라질 수 있으니 JSON 백업을 정기적으로 보관해 주세요.
-          </p>
+          <p>{MANUAL_SESSION_DATA_COPY.privacy}</p>
         </div>
 
         <div className="manual-data-sections">
           <DataSection
             eyebrow="BACKUP"
             title="내 기록 내보내기"
-            description="JSON은 전체 스냅샷 복원용이고, CSV는 기존 Flight Log와 스프레드시트에서 활용할 수 있습니다."
+            description="새로고침 전에 기록을 남겨두세요. JSON은 전체 스냅샷 복원용이고, CSV는 Flight Log와 스프레드시트에서 활용할 수 있습니다."
           >
             <button type="button" className="manual-button manual-button--primary" onClick={exportJson} disabled={busy}>
               JSON 백업 다운로드
@@ -384,7 +393,7 @@ function DataManagementDialogSession({
           <DataSection
             eyebrow="RESTORE"
             title="JSON 백업 복원"
-            description="파일을 먼저 검사하고 요약을 보여 드립니다. 확인 전에는 저장소가 바뀌지 않습니다."
+            description={MANUAL_SESSION_DATA_COPY.restore}
           >
             <label className="manual-file-picker" htmlFor={jsonInputId} aria-disabled={busy}>
               JSON 파일 선택
@@ -456,7 +465,7 @@ function DataManagementDialogSession({
           <DataSection
             eyebrow="MIGRATION"
             title="기존 CSV / Excel 가져오기"
-            description="이전 파일을 이 브라우저에서만 읽습니다. 일반 기록은 앞으로 직접 추가하면 됩니다."
+            description={MANUAL_SESSION_DATA_COPY.legacyImport}
           >
             <label className="manual-file-picker" htmlFor={legacyInputId} aria-disabled={busy}>
               {legacyParsing ? '파일 읽는 중…' : 'CSV · XLS · XLSX 파일 선택'}
@@ -506,7 +515,7 @@ function DataManagementDialogSession({
           <DataSection
             eyebrow="DANGER ZONE"
             title="모든 비행 기록 삭제"
-            description="이 브라우저의 수동 비행 기록을 모두 지웁니다. 먼저 JSON 백업을 권장합니다."
+            description="현재 세션의 수동 비행 기록을 모두 지웁니다. 필요한 기록은 먼저 JSON으로 백업하세요."
             tone="danger"
           >
             <button
@@ -543,10 +552,10 @@ function DataManagementDialogSession({
 
       <ConfirmDialog
         open={confirmation === 'clear'}
-        title="모든 비행 기록을 삭제할까요?"
-        description="이 브라우저에 저장된 수동 비행 기록이 모두 삭제되며, JSON 백업 없이는 되돌릴 수 없습니다."
-        confirmLabel="영구 삭제"
-        requiredText="모두 삭제"
+        title={MANUAL_CLEAR_ALL_CONFIRMATION.title}
+        description={MANUAL_CLEAR_ALL_CONFIRMATION.description}
+        confirmLabel={MANUAL_CLEAR_ALL_CONFIRMATION.confirmLabel}
+        requiredText={MANUAL_CLEAR_ALL_CONFIRMATION.requiredText}
         tone="danger"
         onCancel={() => setConfirmation(null)}
         onConfirm={clearAll}

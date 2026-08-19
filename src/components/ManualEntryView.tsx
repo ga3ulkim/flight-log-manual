@@ -40,7 +40,7 @@ export default function ManualEntryView({
           <h1 id="manual-entry-title" tabIndex={-1}>비행 기록을 추가해보세요.</h1>
           <p>
             한 편씩 저장한 뒤, 준비가 되면 전체 비행 기록으로 이동하세요.
-            저장한 기록은 이 브라우저에 바로 남습니다.
+            기록은 이 페이지가 열려 있는 동안만 유지되며 새로고침하면 초기화됩니다.
           </p>
           <div className="flc-entry-primary-action">
             <button
@@ -125,7 +125,7 @@ export default function ManualEntryView({
             <button className="flc-btn" type="button" onClick={onOpenDemo}>합성 샘플로 둘러보기</button>
           )}
           <p>
-            기록은 현재 브라우저의 IndexedDB에 저장됩니다. 정기적으로 JSON 백업을 보관하세요.
+            기록을 남겨두려면 새로고침 전에 JSON 백업 또는 CSV 내보내기를 사용하세요.
           </p>
         </footer>
       </div>

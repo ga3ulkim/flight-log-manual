@@ -38,6 +38,7 @@ const ringPath = (points: readonly LandPoint[]): string =>
     .join('') + 'Z';
 
 const LAND_PATHS = LAND.map((rings) => rings.map(ringPath).join(''));
+const WORLD_OFFSETS = [-MAP_WIDTH, 0, MAP_WIDTH] as const;
 
 interface FlightMapProps {
   svgRef: RefObject<SVGSVGElement>;
@@ -173,12 +174,14 @@ export default function FlightMap({
             fill="transparent"
             onClick={onBackgroundClick}
           />
-          {[-MAP_WIDTH, 0, MAP_WIDTH].map((worldOffset) => (
-            <g
-              key={`world${worldOffset}`}
-              transform={`translate(${worldOffset},0)`}
-              aria-hidden={worldOffset === 0 ? undefined : true}
-            >
+          <g data-map-layer="grid">
+            {WORLD_OFFSETS.map((worldOffset) => (
+              <g
+                key={`grid-world${worldOffset}`}
+                transform={`translate(${worldOffset},0)`}
+                data-world-offset={worldOffset}
+                aria-hidden={worldOffset === 0 ? undefined : true}
+              >
               {[-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150].map(
                 (longitude) => (
                   <line
@@ -208,6 +211,17 @@ export default function FlightMap({
                   vectorEffect="non-scaling-stroke"
                 />
               ))}
+              </g>
+            ))}
+          </g>
+          <g data-map-layer="land">
+            {WORLD_OFFSETS.map((worldOffset) => (
+              <g
+                key={`land-world${worldOffset}`}
+                transform={`translate(${worldOffset},0)`}
+                data-world-offset={worldOffset}
+                aria-hidden={worldOffset === 0 ? undefined : true}
+              >
               {LAND_PATHS.map((path, index) => (
                 <path
                   key={index}
@@ -219,6 +233,17 @@ export default function FlightMap({
                   vectorEffect="non-scaling-stroke"
                 />
               ))}
+              </g>
+            ))}
+          </g>
+          <g data-map-layer="routes">
+            {WORLD_OFFSETS.map((worldOffset) => (
+              <g
+                key={`route-world${worldOffset}`}
+                transform={`translate(${worldOffset},0)`}
+                data-world-offset={worldOffset}
+                aria-hidden={worldOffset === 0 ? undefined : true}
+              >
               {[...analytics.routes.values()].map((route) => {
                 if (!AIRPORTS[route.a] || !AIRPORTS[route.b]) return null;
                 const key = routeKey(route.a, route.b);
@@ -247,7 +272,7 @@ export default function FlightMap({
                 }
                 const baseWidth = Math.min(3.2, 1 + Math.log2(route.n + 1) * 0.7);
                 return (
-                  <g key={key}>
+                  <g key={key} data-route-key={key}>
                     <path
                       className="flc-route-hit"
                       d={geometry.d}
@@ -280,6 +305,7 @@ export default function FlightMap({
                       }}
                     />
                     <path
+                      className="flc-route-line"
                       d={geometry.d}
                       fill="none"
                       stroke={strokeColor}
@@ -292,6 +318,17 @@ export default function FlightMap({
                   </g>
                 );
               })}
+              </g>
+            ))}
+          </g>
+          <g data-map-layer="airports">
+            {WORLD_OFFSETS.map((worldOffset) => (
+              <g
+                key={`airport-world${worldOffset}`}
+                transform={`translate(${worldOffset},0)`}
+                data-world-offset={worldOffset}
+                aria-hidden={worldOffset === 0 ? undefined : true}
+              >
               {[...analytics.apUse.entries()].map(([code, usage]) => {
                 const coordinate = AIRPORTS[code];
                 if (!coordinate) return null;
@@ -332,6 +369,17 @@ export default function FlightMap({
                   </g>
                 );
               })}
+              </g>
+            ))}
+          </g>
+          <g data-map-layer="vehicles" pointerEvents="none">
+            {WORLD_OFFSETS.map((worldOffset) => (
+              <g
+                key={`vehicle-world${worldOffset}`}
+                transform={`translate(${worldOffset},0)`}
+                data-world-offset={worldOffset}
+                aria-hidden={worldOffset === 0 ? undefined : true}
+              >
               <AircraftMarker
                 currentFlight={currentFlight}
                 nextFlight={nextFlight}
@@ -339,8 +387,9 @@ export default function FlightMap({
                 inverseCameraScale={inverseScale}
                 transferMode={transferMode}
               />
-            </g>
-          ))}
+              </g>
+            ))}
+          </g>
         </svg>
 
         <PlaybackUI

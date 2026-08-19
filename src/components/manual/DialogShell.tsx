@@ -157,15 +157,19 @@ export function DialogShell({
     const previouslyFocused = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
-    const unregisterDialog = registerDialog(stackId);
-    const releaseBodyScroll = lockBodyScroll();
-
-    const timer = window.setTimeout(() => {
+    const focusInitial = () => {
       const panel = panelRef.current;
       if (!panel) return;
       const target = initialFocusRef?.current ?? focusableElements(panel)[0] ?? panel;
       target.focus({ preventScroll: true });
-    }, 0);
+    };
+
+    // A nested dialog makes its parent inert and aria-hidden. Move focus into
+    // the child first so Chrome never observes focus inside the hidden parent.
+    focusInitial();
+    const unregisterDialog = registerDialog(stackId);
+    const releaseBodyScroll = lockBodyScroll();
+    const timer = window.setTimeout(focusInitial, 0);
 
     return () => {
       window.clearTimeout(timer);

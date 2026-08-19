@@ -51,7 +51,7 @@ export interface ManualFlightRecord {
 }
 
 export interface ManualAdaptedFlight extends Flight {
-  /** Stable persisted identity. Use this for edit/delete operations. */
+  /** Stable manual-record identity. Use this for edit/delete operations. */
   manualId: string;
   classificationKnown: boolean;
   departureSnapshot: ManualAirportSnapshot;
@@ -422,7 +422,7 @@ function numericId(stableId: string): number {
 }
 
 /**
- * Adapt one persisted record to the existing visualization domain. Records
+ * Adapt one validated session record to the existing visualization domain. Records
  * without inferable country data have already required an explicit route type.
  */
 export function manualFlightToFlight(

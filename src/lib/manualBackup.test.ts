@@ -6,6 +6,7 @@ import {
   MANUAL_BACKUP_FORMAT,
   ManualBackupValidationError,
   createManualFlightBackup,
+  exportManualFlightBackup,
   manualBackupFileName,
   parseManualFlightBackup,
   restoreManualFlightBackup,
@@ -18,32 +19,10 @@ import {
   manualCsvFileName,
 } from './manualCsv';
 import { parseWorkbook } from './parser';
-import { ManualFlightRepositoryService } from '../storage/manualFlightRepository';
-import type {
-  ManualFlightStorageAdapter,
-  ManualFlightStorageChangeSet,
-} from '../storage/manualFlightRepository';
-
-class MemoryStorage implements ManualFlightStorageAdapter {
-  private readonly records = new Map<string, unknown>();
-
-  async list(): Promise<readonly unknown[]> {
-    return [...this.records.values()].map((value) => structuredClone(value));
-  }
-
-  async get(id: string): Promise<unknown | undefined> {
-    const value = this.records.get(id);
-    return value === undefined ? undefined : structuredClone(value);
-  }
-
-  async apply(changes: ManualFlightStorageChangeSet): Promise<void> {
-    const next = changes.clear ? new Map<string, unknown>() : new Map(this.records);
-    for (const id of changes.deletes ?? []) next.delete(id);
-    for (const record of changes.puts ?? []) next.set(record.id, structuredClone(record));
-    this.records.clear();
-    for (const [id, value] of next) this.records.set(id, value);
-  }
-}
+import {
+  InMemoryManualFlightRepository,
+  createSessionManualFlightRepository,
+} from '../storage/sessionManualFlightRepository';
 
 function airport(
   iata: string,
@@ -85,8 +64,8 @@ function saved(
   });
 }
 
-function repository(): ManualFlightRepositoryService {
-  return new ManualFlightRepositoryService(new MemoryStorage(), {
+function repository(): InMemoryManualFlightRepository {
+  return createSessionManualFlightRepository({
     generateId: () => 'generated',
     now: () => new Date('2025-01-01T00:00:00Z'),
   });
@@ -180,6 +159,25 @@ describe('manual JSON backup', () => {
     const olderBackup = createManualFlightBackup([original]);
     const skipped = await restoreManualFlightBackup(repo, olderBackup, 'merge');
     expect(skipped).toMatchObject({ added: 0, updated: 0, skipped: 1, total: 2 });
+  });
+
+  it('exports current-session records and restored records do not cross a page reinitialization', async () => {
+    const currentPage = repository();
+    const restored = saved('restored-session-only');
+    const backup = createManualFlightBackup([restored]);
+    await restoreManualFlightBackup(currentPage, backup, 'replace');
+
+    expect(await exportManualFlightBackup(
+      currentPage,
+      () => new Date('2026-08-19T00:00:00Z'),
+    )).toMatchObject({
+      exportedAt: '2026-08-19T00:00:00.000Z',
+      flights: [restored],
+    });
+    expect(exportManualFlightsCsv(await currentPage.list())).toContain('Example Airways');
+
+    const refreshedPage = repository();
+    expect(await refreshedPage.list()).toEqual([]);
   });
 
   it('uses human-recognizable local-date filenames', () => {

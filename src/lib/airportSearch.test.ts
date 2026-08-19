@@ -11,6 +11,7 @@ import {
   GENERATED_AIRPORT_SEARCH_INDEX,
 } from '../data/generated/airportSearch';
 import { GENERATED_AIRPORT_COORDINATES } from '../data/generated/ourAirports';
+import { REVIEWED_KOREAN_AIRPORT_ALIASES } from './airportSearchAliases.ko';
 
 const FIXTURE_AIRPORTS = [
   ['GMP', 'Gimpo International Airport', 'Seoul', 'KR'],
@@ -56,6 +57,39 @@ describe('airport search', () => {
       'GMP',
       'ICN',
     ]);
+  });
+
+  it('ranks exact Korean aliases, alias prefixes, then canonical matches', () => {
+    const rankedCatalog = createAirportSearchCatalog([
+      ...FIXTURE_AIRPORTS,
+      ['SEO', '서울', 'Canonical City', 'KR'],
+    ], {
+      countryLocales: ['ko'],
+      resolveCountryName: countryName,
+      aliases: [
+        { alias: '서울', iatas: ['ICN'] },
+        { alias: '서울동부', iatas: ['GMP'] },
+      ],
+    });
+
+    expect(rankedCatalog.search('서울').slice(0, 3).map(({ iata }) => iata))
+      .toEqual(['ICN', 'GMP', 'SEO']);
+  });
+
+  it('uses the reviewed Korean overlay without inventing missing airports', () => {
+    const localizedCatalog = createAirportSearchCatalog(FIXTURE_AIRPORTS, {
+      countryLocales: ['ko', 'en'],
+      resolveCountryName: countryName,
+      aliases: REVIEWED_KOREAN_AIRPORT_ALIASES,
+    });
+
+    expect(localizedCatalog.search('인천').map(({ iata }) => iata)).toEqual(['ICN']);
+    expect(localizedCatalog.search('서울').map(({ iata }) => iata)).toEqual([
+      'ICN',
+      'GMP',
+    ]);
+    expect(localizedCatalog.search('도쿄')).toEqual([]);
+    expect(catalog.search('인천')).toEqual([]);
   });
 
   it('matches ISO, Korean, and English country names', () => {
@@ -144,5 +178,22 @@ describe('generated airport search snapshot', () => {
       iata: 'ICN',
       countryCode: 'KR',
     });
+    expect(generatedCatalog.search('Incheon')[0]?.iata).toBe('ICN');
+    expect(generatedCatalog.search('LAX')[0]?.iata).toBe('LAX');
+    expect(generatedCatalog.search('인천')[0]?.iata).toBe('ICN');
+    expect(generatedCatalog.search('서울').slice(0, 2).map(({ iata }) => iata))
+      .toEqual(['ICN', 'GMP']);
+    expect(generatedCatalog.search('김포')[0]?.iata).toBe('GMP');
+    expect(generatedCatalog.search('부산')[0]?.iata).toBe('PUS');
+    expect(generatedCatalog.search('김해')[0]?.iata).toBe('PUS');
+    expect(generatedCatalog.search('제주')[0]?.iata).toBe('CJU');
+    expect(generatedCatalog.search('로스앤젤레스')[0]?.iata).toBe('LAX');
+    expect(generatedCatalog.search('앤젤')[0]?.iata).toBe('LAX');
+    expect(generatedCatalog.search('인천국')[0]?.iata).toBe('ICN');
+    expect(generatedCatalog.search('도쿄').slice(0, 2).map(({ iata }) => iata))
+      .toEqual(['HND', 'NRT']);
+    expect(generatedCatalog.search('오사카').slice(0, 2).map(({ iata }) => iata))
+      .toEqual(['KIX', 'ITM']);
+    expect(generatedCatalog.search('서울', 1)).toHaveLength(1);
   });
 });

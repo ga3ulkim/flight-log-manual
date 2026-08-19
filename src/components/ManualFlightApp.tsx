@@ -27,11 +27,9 @@ import {
 } from '../lib/manualEntryFlow';
 import { setRuntimeAirportCoordinates } from '../lib/geography';
 import {
-  createIndexedDbManualFlightRepository,
-  mergeManualFlightRecords,
-  sortManualFlightRecords,
-  type ManualFlightRepositoryService,
-} from '../storage/manualFlightRepository';
+  createSessionManualFlightRepository,
+  type ManualFlightRepository,
+} from '../storage/sessionManualFlightRepository';
 import {
   DataManagementDialog,
   FlightEditorDialog,
@@ -41,27 +39,12 @@ import {
 import FlightLogChart from './FlightLogChart';
 import ManualEntryView from './ManualEntryView';
 
-type StorageStatus = 'loading' | 'ready' | 'error';
 type EditorState = ManualFlightRecord | null | undefined;
-
-function sameManualRecords(
-  left: readonly ManualFlightRecord[],
-  right: readonly ManualFlightRecord[],
-): boolean {
-  if (left.length !== right.length) return false;
-  return left.every((record, index) => JSON.stringify(record) === JSON.stringify(right[index]));
-}
 
 function readableError(error: unknown): string {
   return error instanceof Error && error.message
     ? error.message
-    : '브라우저 저장소를 사용할 수 없습니다.';
-}
-
-function storagePersistenceRequest(): void {
-  const persist = navigator.storage?.persist;
-  if (typeof persist !== 'function') return;
-  void persist.call(navigator.storage).catch(() => undefined);
+    : '현재 세션의 비행 기록을 변경하지 못했습니다.';
 }
 
 function focusAfterRender(id: string): void {
@@ -69,86 +52,40 @@ function focusAfterRender(id: string): void {
 }
 
 export default function ManualFlightApp() {
-  const repositoryRef = useRef<ManualFlightRepositoryService | null>(null);
+  const repositoryRef = useRef<ManualFlightRepository | null>(null);
   if (!repositoryRef.current) {
-    repositoryRef.current = createIndexedDbManualFlightRepository();
+    repositoryRef.current = createSessionManualFlightRepository();
   }
   const repository = repositoryRef.current;
 
-  const [storageStatus, setStorageStatus] = useState<StorageStatus>('loading');
-  const [storageError, setStorageError] = useState('');
   const [records, setRecords] = useState<ManualFlightRecord[]>([]);
   const [demoMode, setDemoMode] = useState(false);
   const [editor, setEditor] = useState<EditorState>(undefined);
   const [editorSubmitting, setEditorSubmitting] = useState(false);
   const [dataManagementOpen, setDataManagementOpen] = useState(false);
   const [notice, setNotice] = useState('');
-  const [screen, setScreen] = useState<ManualAppScreen>('entry');
-  const recordsRef = useRef<ManualFlightRecord[]>([]);
+  const [screen, setScreen] = useState<ManualAppScreen>(() => initialManualAppScreen());
 
   const applyRecords = useCallback((nextRecords: ManualFlightRecord[]) => {
-    recordsRef.current = nextRecords;
     setRuntimeAirportCoordinates(manualCoordinateOverrides(nextRecords));
     setRecords(nextRecords);
   }, []);
 
-  const reloadArchive = useCallback(async () => {
+  const reloadSessionArchive = useCallback(async () => {
     const nextRecords = await repository.list();
-    if (!sameManualRecords(recordsRef.current, nextRecords)) applyRecords(nextRecords);
+    applyRecords(nextRecords);
     return nextRecords;
   }, [applyRecords, repository]);
 
-  const reconcileAfterWrite = useCallback(async (
-    committedRecords: readonly ManualFlightRecord[],
-  ): Promise<boolean> => {
-    try {
-      await reloadArchive();
-      return true;
-    } catch {
-      applyRecords(sortManualFlightRecords(committedRecords));
-      setNotice(
-        '저장은 완료됐지만 저장소 재확인에 실패해 방금 변경한 내용을 표시합니다. 페이지를 다시 열어 확인해 주세요.',
-      );
-      return false;
-    }
-  }, [applyRecords, reloadArchive]);
-
-  const initializeStorage = useCallback(async () => {
-    setStorageStatus('loading');
-    setStorageError('');
-    try {
-      await reloadArchive();
-      setScreen(initialManualAppScreen());
-      setStorageStatus('ready');
-    } catch (error) {
-      setRuntimeAirportCoordinates({});
-      setStorageError(readableError(error));
-      setStorageStatus('error');
-    }
-  }, [reloadArchive]);
-
   useEffect(() => {
-    void initializeStorage();
+    // A new component/page instance owns a new empty in-memory repository.
+    // Legacy IndexedDB data is intentionally neither read nor deleted.
+    setRuntimeAirportCoordinates({});
     return () => {
       repository.close();
       setRuntimeAirportCoordinates({});
     };
-  }, [initializeStorage, repository]);
-
-  useEffect(() => {
-    if (storageStatus !== 'ready' || demoMode) return undefined;
-    const refreshVisibleArchive = () => {
-      if (document.visibilityState === 'visible') {
-        void reloadArchive().catch(() => undefined);
-      }
-    };
-    window.addEventListener('focus', refreshVisibleArchive);
-    document.addEventListener('visibilitychange', refreshVisibleArchive);
-    return () => {
-      window.removeEventListener('focus', refreshVisibleArchive);
-      document.removeEventListener('visibilitychange', refreshVisibleArchive);
-    };
-  }, [demoMode, reloadArchive, storageStatus]);
+  }, [repository]);
 
   useEffect(() => {
     if (!demoMode && records.length === 0) setScreen('entry');
@@ -163,7 +100,7 @@ export default function ManualFlightApp() {
     setRuntimeAirportCoordinates({});
     setScreen('archive');
     setDemoMode(true);
-    setNotice('합성 샘플은 임시 화면이며 개인 기록에 저장되지 않습니다.');
+    setNotice('합성 샘플은 임시 화면이며 현재 세션 기록에 추가되지 않습니다.');
   };
 
   const exitDemo = () => {
@@ -198,25 +135,20 @@ export default function ManualFlightApp() {
   ) => {
     setEditorSubmitting(true);
     try {
-      let committedRecords: ManualFlightRecord[];
       if (context.mode === 'edit' && context.recordId) {
-        const updated = await repository.update(context.recordId, input);
-        committedRecords = sortManualFlightRecords(
-          records.map((record) => record.id === updated.id ? updated : record),
-        );
+        await repository.update(context.recordId, input);
       } else {
-        const firstRecord = records.length === 0;
-        const created = await repository.add(input);
-        committedRecords = sortManualFlightRecords([...records, created]);
-        if (firstRecord) storagePersistenceRequest();
+        await repository.add(input);
       }
-      const verified = await reconcileAfterWrite(committedRecords);
+      const committedRecords = await reloadSessionArchive();
       setScreen((current) => manualAppScreenAfterMutation(current, committedRecords.length));
       setDemoMode(false);
       setEditor(undefined);
-      if (verified) {
-        setNotice(context.mode === 'edit' ? '비행 기록을 수정했습니다.' : '비행 기록을 저장했습니다.');
-      }
+      setNotice(
+        context.mode === 'edit'
+          ? '현재 세션의 비행 기록을 수정했습니다.'
+          : '현재 세션에 비행 기록을 추가했습니다.',
+      );
     } finally {
       setEditorSubmitting(false);
     }
@@ -231,14 +163,14 @@ export default function ManualFlightApp() {
     const deletionOrigin = screen;
 
     try {
-      const committedRecords = await commitImmediateManualFlightDeletion(
+      await commitImmediateManualFlightDeletion(
         (id) => repository.delete(id),
         records,
         manualId,
       );
-      const verified = await reconcileAfterWrite(committedRecords);
+      const committedRecords = await reloadSessionArchive();
       setScreen((current) => manualAppScreenAfterMutation(current, committedRecords.length));
-      if (verified) setNotice('비행 기록을 삭제했습니다.');
+      setNotice('현재 세션의 비행 기록을 삭제했습니다.');
 
       if (deletionOrigin === 'entry') {
         focusAfterRender(
@@ -263,15 +195,14 @@ export default function ManualFlightApp() {
     mode: ManualBackupRestoreMode,
   ) => {
     const result = await restoreManualFlightBackup(repository, backup, mode);
-    const committedRecords = mode === 'replace'
-      ? sortManualFlightRecords(backup.flights)
-      : mergeManualFlightRecords(records, backup.flights);
-    const verified = await reconcileAfterWrite(committedRecords);
+    const committedRecords = await reloadSessionArchive();
     setScreen((current) => manualAppScreenAfterMutation(current, committedRecords.length));
     setDemoMode(false);
-    if (verified) {
-      setNotice(mode === 'replace' ? 'JSON 백업으로 기록을 교체했습니다.' : 'JSON 백업을 병합했습니다.');
-    }
+    setNotice(
+      mode === 'replace'
+        ? 'JSON 백업을 현재 세션 기록으로 불러왔습니다.'
+        : 'JSON 백업을 현재 세션 기록에 병합했습니다.',
+    );
     return result;
   };
 
@@ -284,13 +215,10 @@ export default function ManualFlightApp() {
       now: () => new Date(importStartedAt + index),
     }));
     const result = await repository.merge(incoming);
-    const committedRecords = mergeManualFlightRecords(records, incoming);
-    const verified = await reconcileAfterWrite(committedRecords);
+    const committedRecords = await reloadSessionArchive();
     setScreen((current) => manualAppScreenAfterMutation(current, committedRecords.length));
     setDemoMode(false);
-    if (verified) {
-      setNotice(`${result.added.toLocaleString()}개의 기존 기록을 가져왔습니다.`);
-    }
+    setNotice(`${result.added.toLocaleString()}개의 기존 기록을 현재 세션으로 가져왔습니다.`);
     return {
       added: result.added,
       skipped: converted.skipped,
@@ -300,38 +228,11 @@ export default function ManualFlightApp() {
 
   const clearAll = async () => {
     await repository.clear();
-    applyRecords([]);
+    await reloadSessionArchive();
     setScreen('entry');
     setDemoMode(false);
-    setNotice('이 브라우저의 모든 비행 기록을 삭제했습니다.');
+    setNotice('현재 세션의 모든 비행 기록을 삭제했습니다.');
   };
-
-  if (storageStatus === 'loading') {
-    return (
-      <main className="flc-app flc-storage-state" aria-busy="true">
-        <div className="flc-storage-card" role="status">
-          <div className="flc-eyebrow">PERSONAL FLIGHT LOG</div>
-          <h1>비행 기록을 불러오는 중입니다</h1>
-          <p>이 브라우저에 저장된 개인 아카이브를 확인하고 있습니다.</p>
-        </div>
-      </main>
-    );
-  }
-
-  if (storageStatus === 'error') {
-    return (
-      <main className="flc-app flc-storage-state">
-        <div className="flc-storage-card">
-          <div className="flc-eyebrow">STORAGE UNAVAILABLE</div>
-          <h1>비행 기록 저장소를 열지 못했습니다</h1>
-          <p role="alert">{storageError}</p>
-          <button className="flc-btn flc-btn-primary" type="button" onClick={() => void initializeStorage()}>
-            다시 시도
-          </button>
-        </div>
-      </main>
-    );
-  }
 
   const showEntry = !demoMode && (screen === 'entry' || records.length === 0);
   return (
@@ -349,7 +250,7 @@ export default function ManualFlightApp() {
       ) : (
         <FlightLogChart
           flights={visibleFlights}
-          sourceLabel={demoMode ? 'TEMPORARY DEMO · 합성 샘플' : 'LOCAL ARCHIVE · 이 브라우저'}
+          sourceLabel={demoMode ? 'TEMPORARY DEMO · 합성 샘플' : 'CURRENT SESSION · 새로고침 시 초기화'}
           demoMode={demoMode}
           onAddFlight={() => setEditor(null)}
           onOpenRecordManagement={openRecordManagement}

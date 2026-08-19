@@ -531,7 +531,7 @@ export default function FlightLogChart({
 
         {demoMode && (
           <div className="flc-demo-banner" role="status">
-            합성 샘플을 임시로 보고 있습니다. 샘플 기록은 브라우저 저장소에 저장되지 않습니다.
+            합성 샘플을 임시로 보고 있습니다. 샘플은 현재 세션 기록에 추가되지 않습니다.
           </div>
         )}
 
@@ -690,9 +690,9 @@ export default function FlightLogChart({
           </div>
           <div>
             <strong>LOCAL &amp; PRIVATE</strong>
-            개인 비행 기록은 이 브라우저의 IndexedDB에 저장되며 서버나 계정으로 전송되지
-            않습니다. 브라우저 또는 사이트 데이터를 지우면 기록도 사라질 수 있으므로 JSON
-            백업을 정기적으로 보관하세요.
+            개인 비행 기록은 현재 페이지가 열려 있는 동안만 유지되며 새로고침하면 초기화됩니다.
+            계정이나 백엔드가 없고 비행 기록을 자동 전송하지 않습니다. 기록을 남겨두려면 JSON
+            백업 또는 CSV 내보내기를 사용하세요.
           </div>
         </footer>
       </div>

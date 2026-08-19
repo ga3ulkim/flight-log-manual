@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { createManualFlight } from './manualFlight';
 import type { AirportSearchEntry } from './airportSearch';
 import type { Flight } from '../types';
 import { legacyFlightsToManualInputs } from './manualImport';
+import { createSessionManualFlightRepository } from '../storage/sessionManualFlightRepository';
 
 const entries = new Map<string, AirportSearchEntry>([
   ['ICN', {
@@ -107,5 +109,27 @@ describe('legacy manual import adapter', () => {
     );
     expect(result.skipped).toBe(0);
     expect(result.inputs[0].type).toBe('국내선');
+  });
+
+  it('keeps converted CSV records only in the current page session', async () => {
+    const conversion = legacyFlightsToManualInputs(
+      [legacyFlight()],
+      { findByIata: (iata) => entries.get(iata) },
+    );
+    const currentPage = createSessionManualFlightRepository();
+    const incoming = conversion.inputs.map((value, index) => createManualFlight(value, {
+      generateId: () => `imported-${index}`,
+      now: () => new Date('2025-01-22T00:00:00Z'),
+    }));
+    await currentPage.merge(incoming);
+
+    expect(await currentPage.list()).toHaveLength(1);
+    expect((await currentPage.list())[0]).toMatchObject({
+      departure: { iata: 'ICN' },
+      arrival: { iata: 'NRT' },
+    });
+
+    const refreshedPage = createSessionManualFlightRepository();
+    expect(await refreshedPage.list()).toEqual([]);
   });
 });

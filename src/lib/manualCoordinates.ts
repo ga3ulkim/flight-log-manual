@@ -15,11 +15,11 @@ function hasOwnCoordinate(
 }
 
 /**
- * Build the archive-scoped map index from persisted snapshots. When records
+ * Build the archive-scoped map index from session-record snapshots. When records
  * disagree about one code, the earliest saved usable snapshot wins
  * deterministically. Editing unrelated flight metadata therefore cannot move
  * every route that shares an IATA code. A code is explicitly unresolved only
- * when every persisted snapshot for it lacks coordinates.
+ * when every current-session snapshot for it lacks coordinates.
  */
 export function manualCoordinateOverrides(
   records: readonly ManualFlightRecord[],

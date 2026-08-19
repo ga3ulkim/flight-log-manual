@@ -127,7 +127,7 @@ describe('immediate manual-flight deletion', () => {
   it('does not derive a falsely deleted list when repository deletion fails', async () => {
     const only = record('only', '2024-08-20', '2024-08-20T01:00:00.000Z');
     const authoritative = [only];
-    const failure = new Error('synthetic IndexedDB failure');
+    const failure = new Error('synthetic repository failure');
 
     await expect(commitImmediateManualFlightDeletion(
       async () => { throw failure; },

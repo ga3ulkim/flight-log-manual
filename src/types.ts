@@ -7,7 +7,7 @@ export type RouteKey = string;
 
 export interface Flight {
   id: number;
-  /** Stable persisted identity for Manual V1 CRUD; absent for demo/legacy rows. */
+  /** Stable manual-record identity for CRUD; absent for demo/legacy rows. */
   manualId?: string;
   /** Legacy-import provenance; fallback means the parser lacked safe evidence. */
   typeSource?: 'explicit' | 'countries' | 'fallback';
