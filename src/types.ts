@@ -24,12 +24,21 @@ export interface Flight {
   ac: string;
   d: string;
   y: number | null;
+  /** User-entered local wall-clock time at the departure airport. */
+  departureTime?: string;
+  /** Point-in-time IANA zone snapshots for timezone-aware derived timing. */
+  departureTimeZoneId?: string;
+  arrivalTimeZoneId?: string;
+  /** Stable carrier codes only when a local autocomplete result was selected. */
+  airlineIata?: string;
+  airlineIcao?: string;
   sortKey: string;
 }
 
 export interface DateInfo {
   y: number | null;
   d: string;
+  departureTime?: string;
   sortKey: string;
 }
 

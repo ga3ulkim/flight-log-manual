@@ -132,6 +132,9 @@ export function parseRows(rows: readonly (readonly unknown[])[]): ParseResult {
       ac: normalizeAircraft(rawAircraft),
       d: dateInfo.d,
       y: dateInfo.y,
+      ...(dateInfo.departureTime
+        ? { departureTime: dateInfo.departureTime }
+        : {}),
       sortKey: dateInfo.sortKey,
     });
   }

@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+// Comprehensive boundaries preserve distinct historic zone identifiers for
+// pre-1970 records; lookup remains build-time only.
+import { find as findTimeZones } from 'geo-tz/all';
 import { DUPLICATE_IATA_SELECTIONS } from './airport-duplicate-resolutions.mjs';
+import { AMBIGUOUS_AIRPORT_TIMEZONE_SELECTIONS } from './airport-timezone-resolutions.mjs';
 import {
   OURAIRPORTS_SOURCE_URL,
   buildAirportIndex,
@@ -68,13 +72,17 @@ async function main() {
   const sourceText = sourceBuffer.toString('utf8');
   const result = buildAirportIndex(sourceText, {
     duplicateSelections: DUPLICATE_IATA_SELECTIONS,
+    timeZoneResolver: findTimeZones,
+    timezoneSelections: AMBIGUOUS_AIRPORT_TIMEZONE_SELECTIONS,
   });
   const canonicalCoordinates = JSON.stringify(Object.entries(result.airports));
   const coordinateSha256 = sha256(canonicalCoordinates);
   const canonicalSearchEntries = JSON.stringify(result.searchEntries);
   const searchSha256 = sha256(canonicalSearchEntries);
   validateAirportIndex(result.airports);
-  validateAirportSearchIndex(result.searchEntries, result.airports);
+  validateAirportSearchIndex(result.searchEntries, result.airports, {
+    requireTimezones: true,
+  });
   const generatedCoordinates = formatGeneratedAirportModule(
     result.airports,
     coordinateSha256,
@@ -104,6 +112,16 @@ async function main() {
   for (const report of result.duplicateReports) {
     console.log(
       `  ${report.code}: ${report.candidateCount} rows -> ${report.selectedIdent} (${report.reason})`,
+    );
+  }
+  console.log(
+    `Airport timezones: ${result.stats.timezoneResolved.toLocaleString('en-US')} resolved, ` +
+      `${result.stats.timezoneUnresolved.toLocaleString('en-US')} unresolved, ` +
+      `${result.stats.timezoneMultiple.toLocaleString('en-US')} multi-zone coordinates`,
+  );
+  for (const report of result.timezoneReports) {
+    console.log(
+      `  ${report.code}: ${report.candidates.join(', ')} -> ${report.selectedTimezoneId}`,
     );
   }
   console.log(`Coordinate SHA-256: ${coordinateSha256}`);

@@ -192,6 +192,38 @@ describe('session-only manual flight repository', () => {
     expect(await repository().list()).toEqual([]);
   });
 
+  it.each([
+    {
+      name: 'a future-dated restored record',
+      originalTimestamp: '2030-01-01T00:00:00.000Z',
+      editTimestamp: '2026-08-19T00:00:00.000Z',
+    },
+    {
+      name: 'an edit in the same millisecond',
+      originalTimestamp: '2026-08-19T00:00:00.000Z',
+      editTimestamp: '2026-08-19T00:00:00.000Z',
+    },
+  ])('advances updatedAt so a merge retains $name', async ({
+    originalTimestamp,
+    editTimestamp,
+  }) => {
+    const repo = repository();
+    const original = saved('shared-clock', originalTimestamp);
+    const edited = updateManualFlight(original, input({ airline: 'Merged Edit' }), {
+      now: () => new Date(editTimestamp),
+    });
+    await repo.replaceAll([original]);
+
+    expect(Date.parse(edited.updatedAt)).toBe(Date.parse(original.updatedAt) + 1);
+    expect(await repo.merge([edited])).toMatchObject({
+      added: 0,
+      updated: 1,
+      skipped: 0,
+      total: 1,
+    });
+    expect((await repo.get(original.id))?.airline).toBe('Merged Edit');
+  });
+
   it('clears all current-session records and releases them on close', async () => {
     const repo = repository();
     await repo.replaceAll([saved('one'), saved('two', '2025-01-23T00:00:00Z')]);
@@ -214,5 +246,14 @@ describe('session-only manual flight repository', () => {
     expect(mergeManualFlightRecords(current, [newer, added])).toEqual([added, newer]);
     expect(sortManualFlightRecords([older, added])).toEqual([added, older]);
     expect(current).toEqual([older]);
+  });
+
+  it('orders same-day session records by local time, then untimed stable fallback', () => {
+    const untimed = saved('untimed', '2025-01-01T00:00:00Z');
+    const late = saved('late', '2025-01-02T00:00:00Z', { departureTime: '18:20' });
+    const early = saved('early', '2025-01-03T00:00:00Z', { departureTime: '07:10' });
+
+    expect(sortManualFlightRecords([untimed, late, early]).map(({ id }) => id))
+      .toEqual(['early', 'late', 'untimed']);
   });
 });

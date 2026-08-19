@@ -15,6 +15,10 @@ import {
   loadAirportSearchCatalog,
 } from '../../lib/airportSearch';
 import {
+  type AirlineSearchCatalog,
+  loadAirlineSearchCatalog,
+} from '../../lib/airlineSearch';
+import {
   ManualFlightValidationError,
   createManualAirportSnapshot,
   createManualFlight,
@@ -24,6 +28,7 @@ import {
   type ManualFlightRecord,
 } from '../../lib/manualFlight';
 import type { FlightType } from '../../types';
+import AirlineCombobox, { type AirlineSelection } from './AirlineCombobox';
 import { ConfirmDialog } from './ConfirmDialog';
 import { DialogShell } from './DialogShell';
 
@@ -50,9 +55,11 @@ interface AirportDraft {
 
 interface FlightFormState {
   date: string;
+  departureTime: string;
   departure: AirportDraft;
   arrival: AirportDraft;
   airline: string;
+  airlineSelection: AirlineSelection | null;
   flightNumber: string;
   aircraft: string;
   explicitType: FlightType | null;
@@ -127,9 +134,11 @@ function airportDraft(snapshot?: ManualAirportSnapshot): AirportDraft {
 function initialForm(record?: ManualFlightRecord | null): FlightFormState {
   return {
     date: record?.date ?? localDateOnly(),
+    departureTime: record?.departureTime ?? '',
     departure: airportDraft(record?.departure),
     arrival: airportDraft(record?.arrival),
     airline: record?.airline ?? '',
+    airlineSelection: record?.airlineSnapshot ?? null,
     flightNumber: record?.flightNumber ?? '',
     aircraft: record?.aircraft ?? '',
     explicitType: record?.type ?? null,
@@ -629,6 +638,9 @@ function FlightEditorDialogSession({
   const [catalog, setCatalog] = useState<AirportSearchCatalog | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState('');
+  const [airlineCatalog, setAirlineCatalog] = useState<AirlineSearchCatalog | null>(null);
+  const [airlineCatalogLoading, setAirlineCatalogLoading] = useState(true);
+  const [airlineCatalogError, setAirlineCatalogError] = useState('');
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -637,10 +649,9 @@ function FlightEditorDialogSession({
   const errorSummaryRef = useRef<HTMLDivElement>(null);
   const formId = useId();
   const dateId = useId();
-  const airlineId = useId();
+  const departureTimeId = useId();
   const flightNumberId = useId();
   const aircraftId = useId();
-  const airlineListId = useId();
   const flightNumberListId = useId();
   const aircraftListId = useId();
   const isSaving = submitting || saving;
@@ -658,6 +669,24 @@ function FlightEditorDialogSession({
         if (!alive) return;
         setCatalogError('공항 검색 목록을 불러오지 못했습니다.');
         setCatalogLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    void loadAirlineSearchCatalog()
+      .then((loaded) => {
+        if (!alive) return;
+        setAirlineCatalog(loaded);
+        setAirlineCatalogLoading(false);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setAirlineCatalogError('항공사 검색 목록을 불러오지 못했습니다.');
+        setAirlineCatalogLoading(false);
       });
     return () => {
       alive = false;
@@ -692,6 +721,7 @@ function FlightEditorDialogSession({
       // makes those cross-field messages stale until the next submit.
       delete next['arrival.iata'];
       delete next.type;
+      if (role === 'departure') delete next.departureTime;
       return next;
     });
   };
@@ -722,9 +752,11 @@ function FlightEditorDialogSession({
 
     const input: ManualFlightInput = {
       date: form.date,
+      departureTime: form.departureTime || undefined,
       departure,
       arrival,
       airline: form.airline,
+      airlineSnapshot: form.airlineSelection ?? undefined,
       flightNumber: form.flightNumber,
       aircraft: form.aircraft,
       type: inferredType ?? form.explicitType ?? undefined,
@@ -778,6 +810,7 @@ function FlightEditorDialogSession({
 
   const errorCount = Object.values(errors).filter(Boolean).length + (saveError ? 1 : 0);
   const dateError = errors.date;
+  const departureTimeError = errors.departureTime;
   const typeError = errors.type;
 
   return (
@@ -825,30 +858,65 @@ function FlightEditorDialogSession({
             </div>
           )}
 
-          <div className="manual-field manual-field--date">
-            <label htmlFor={dateId}>날짜 <span aria-hidden="true">*</span></label>
-            <input
-              ref={dateRef}
-              id={dateId}
-              type="date"
-              min="1900-01-01"
-              value={form.date}
-              onChange={(event) => {
-                setForm((current) => ({ ...current, date: event.target.value }));
-                setErrors((current) => {
-                  const next = { ...current };
-                  delete next.date;
-                  return next;
-                });
-              }}
-              disabled={isSaving}
-              required
-              aria-required="true"
-              aria-invalid={Boolean(dateError)}
-              aria-describedby={dateError ? `${dateId}-error` : undefined}
-              data-error={Boolean(dateError) || undefined}
-            />
-            {dateError && <p id={`${dateId}-error`} className="manual-field-error">{dateError}</p>}
+          <div className="manual-form-grid manual-form-grid--schedule">
+            <div className="manual-field manual-field--date">
+              <label htmlFor={dateId}>날짜 <span aria-hidden="true">*</span></label>
+              <input
+                ref={dateRef}
+                id={dateId}
+                type="date"
+                min="1900-01-01"
+                value={form.date}
+                onChange={(event) => {
+                  setForm((current) => ({ ...current, date: event.target.value }));
+                  setErrors((current) => {
+                    const next = { ...current };
+                    delete next.date;
+                    delete next.departureTime;
+                    return next;
+                  });
+                }}
+                disabled={isSaving}
+                required
+                aria-required="true"
+                aria-invalid={Boolean(dateError)}
+                aria-describedby={dateError ? `${dateId}-error` : undefined}
+                data-error={Boolean(dateError) || undefined}
+              />
+              {dateError && <p id={`${dateId}-error`} className="manual-field-error">{dateError}</p>}
+            </div>
+
+            <div className="manual-field manual-field--time">
+              <label htmlFor={departureTimeId}>
+                출발시간 <span className="manual-optional">선택</span>
+              </label>
+              <input
+                id={departureTimeId}
+                type="time"
+                step={60}
+                value={form.departureTime}
+                onChange={(event) => {
+                  setForm((current) => ({ ...current, departureTime: event.target.value }));
+                  setErrors((current) => {
+                    const next = { ...current };
+                    delete next.departureTime;
+                    return next;
+                  });
+                }}
+                disabled={isSaving}
+                aria-invalid={Boolean(departureTimeError)}
+                aria-describedby={`${departureTimeId}-help${departureTimeError ? ` ${departureTimeId}-error` : ''}`}
+                data-error={Boolean(departureTimeError) || undefined}
+              />
+              <p id={`${departureTimeId}-help`} className="manual-field-help">
+                출발 공항의 현지 시각
+              </p>
+              {departureTimeError && (
+                <p id={`${departureTimeId}-error`} className="manual-field-error" role="alert">
+                  {departureTimeError}
+                </p>
+              )}
+            </div>
           </div>
 
           <AirportField
@@ -919,13 +987,21 @@ function FlightEditorDialogSession({
           )}
 
           <div className="manual-form-grid manual-form-grid--optional">
-            <OptionalTextField
-              id={airlineId}
-              label="항공사"
+            <AirlineCombobox
               value={form.airline}
-              listId={airlineListId}
+              selection={form.airlineSelection}
+              catalog={airlineCatalog}
+              catalogLoading={airlineCatalogLoading}
+              catalogError={airlineCatalogError}
+              history={suggestions.airline}
               disabled={isSaving}
-              onChange={(value) => setForm((current) => ({ ...current, airline: value }))}
+              onChange={(airline, airlineSelection) => {
+                setForm((current) => ({
+                  ...current,
+                  airline,
+                  airlineSelection,
+                }));
+              }}
             />
             <OptionalTextField
               id={flightNumberId}
@@ -945,7 +1021,6 @@ function FlightEditorDialogSession({
             />
           </div>
 
-          <datalist id={airlineListId}>{suggestions.airline.map((value) => <option key={value} value={value} />)}</datalist>
           <datalist id={flightNumberListId}>{suggestions.flightNumber.map((value) => <option key={value} value={value} />)}</datalist>
           <datalist id={aircraftListId}>{suggestions.aircraft.map((value) => <option key={value} value={value} />)}</datalist>
         </form>

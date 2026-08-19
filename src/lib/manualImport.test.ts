@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { createManualFlight } from './manualFlight';
 import type { AirportSearchEntry } from './airportSearch';
 import type { Flight } from '../types';
-import { legacyFlightsToManualInputs } from './manualImport';
+import {
+  legacyFlightsToManualInputs,
+  legacyFlightsToManualRecords,
+} from './manualImport';
 import { createSessionManualFlightRepository } from '../storage/sessionManualFlightRepository';
 
 const entries = new Map<string, AirportSearchEntry>([
@@ -12,6 +15,7 @@ const entries = new Map<string, AirportSearchEntry>([
     municipality: 'Seoul',
     countryCode: 'KR',
     countryName: '대한민국',
+    timezoneId: 'Asia/Seoul',
   }],
   ['NRT', {
     iata: 'NRT',
@@ -19,6 +23,15 @@ const entries = new Map<string, AirportSearchEntry>([
     municipality: 'Tokyo',
     countryCode: 'JP',
     countryName: '일본',
+    timezoneId: 'Asia/Tokyo',
+  }],
+  ['JFK', {
+    iata: 'JFK',
+    name: 'John F. Kennedy International Airport',
+    municipality: 'New York',
+    countryCode: 'US',
+    countryName: '미국',
+    timezoneId: 'America/New_York',
   }],
 ]);
 
@@ -58,15 +71,77 @@ describe('legacy manual import adapter', () => {
         iata: 'ICN',
         municipality: '서울',
         countryCode: 'KR',
+        timezoneId: 'Asia/Seoul',
       },
       arrival: {
         iata: 'NRT',
         municipality: '도쿄',
         countryCode: 'JP',
+        timezoneId: 'Asia/Tokyo',
       },
     });
     expect(result.inputs[0].departure.latitude).not.toBeNull();
     expect(result.inputs[0].arrival.longitude).not.toBeNull();
+  });
+
+  it('preserves an optional parsed departure time in the session input', () => {
+    const result = legacyFlightsToManualInputs(
+      [{ ...legacyFlight('2026.08.19'), departureTime: '14:30' }],
+      { findByIata: (iata) => entries.get(iata) },
+    );
+    expect(result.inputs[0]).toMatchObject({
+      date: '2026-08-19',
+      departureTime: '14:30',
+    });
+  });
+
+  it('skips a DST-gap row while retaining valid siblings for one atomic merge', async () => {
+    const gap = {
+      ...legacyFlight('2026.03.08'),
+      fa: 'JFK',
+      fc: '미국',
+      fcity: '뉴욕',
+      departureTime: '02:30',
+      sortKey: '2026.03.08 02:30',
+      y: 2026,
+    };
+    const valid = {
+      ...legacyFlight('2026.08.19'),
+      departureTime: '14:30',
+      sortKey: '2026.08.19 14:30',
+      y: 2026,
+    };
+    const converted = legacyFlightsToManualRecords(
+      [gap, valid],
+      { findByIata: (iata) => entries.get(iata) },
+      (index) => ({
+        generateId: () => `imported-${index}`,
+        now: () => new Date(`2026-08-19T00:00:0${index}.000Z`),
+      }),
+    );
+
+    expect(converted.skipped).toBe(1);
+    expect(converted.records).toHaveLength(1);
+    expect(converted.records[0]).toMatchObject({
+      id: 'imported-1',
+      date: '2026-08-19',
+      departureTime: '14:30',
+    });
+
+    const currentPage = createSessionManualFlightRepository();
+    await currentPage.replaceAll([createManualFlight({
+      ...converted.records[0],
+      date: '2026-08-18',
+    }, {
+      generateId: () => 'existing',
+      now: () => new Date('2026-08-18T00:00:00.000Z'),
+    })]);
+    const merged = await currentPage.merge(converted.records);
+    expect(merged).toMatchObject({ added: 1, updated: 0, skipped: 0, total: 2 });
+    expect((await currentPage.list()).map(({ id }) => id)).toEqual([
+      'existing',
+      'imported-1',
+    ]);
   });
 
   it('reports rows without a stable date instead of silently changing their day', () => {

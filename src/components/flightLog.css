@@ -944,7 +944,7 @@
   z-index: 3;
   top: 12px;
   left: 12px;
-  width: min(340px, calc(100% - 96px));
+  width: min(380px, calc(100% - 96px));
   padding: 11px 13px 12px;
   border: 1px solid rgba(185, 174, 142, 0.85);
   border-radius: 10px;
@@ -976,6 +976,42 @@
   color: var(--flc-ink-soft);
   font-size: 11px;
   line-height: 1.5;
+}
+
+.flc-playback-timing {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 7px 0 0;
+  border-top: 1px solid rgba(185, 174, 142, 0.58);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.flc-playback-timing > div {
+  display: grid;
+  grid-template-columns: minmax(88px, auto) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.flc-playback-timing dt {
+  color: var(--flc-ink-soft);
+}
+
+.flc-playback-timing dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  justify-content: flex-end;
+  margin: 0;
+  text-align: right;
+}
+
+.flc-playback-timing dd span {
+  color: var(--flc-intl);
+  font-size: 8.5px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
 }
 
 .flc-playback-route.flc-playback-transfer {
@@ -1104,6 +1140,28 @@
   color: var(--flc-ink-soft);
 }
 
+.flc-route-date > time {
+  display: block;
+}
+
+.flc-route-time,
+.flc-timeline-time {
+  margin-top: 3px;
+  color: var(--flc-ink);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.flc-route-time span,
+.flc-timeline-time span {
+  color: var(--flc-ink-soft);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
 .flc-route-main {
   min-width: 0;
   line-height: 1.45;
@@ -1204,6 +1262,11 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11px;
   letter-spacing: 0.04em;
+}
+
+.flc-timeline-date > time,
+.flc-timeline-date > span {
+  display: block;
 }
 
 .flc-timeline-flight {

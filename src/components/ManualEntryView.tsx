@@ -75,7 +75,7 @@ export default function ManualEntryView({
                 return (
                   <li className="flc-entry-flight" key={flight.manualId ?? flight.id}>
                     <article>
-                      <time dateTime={flight.sortKey.replace(/\./g, '-')}>{flight.d}</time>
+                      <time dateTime={flight.d.replace(/\./g, '-')}>{flight.d}</time>
                       <strong>{flight.fa} <span aria-hidden="true">→</span> {flight.ta}</strong>
                       {metadata && <p>{metadata}</p>}
                     </article>

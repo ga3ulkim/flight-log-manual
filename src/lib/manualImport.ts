@@ -2,15 +2,24 @@ import { resolveAirportCoordinate } from '../data/airports';
 import type { Flight } from '../types';
 import type { AirportSearchCatalog, AirportSearchEntry } from './airportSearch';
 import {
+  ManualFlightValidationError,
   createManualAirportSnapshot,
+  createManualFlight,
   inferManualFlightType,
   isValidDateOnly,
   type ManualAirportSnapshot,
+  type ManualFlightFactories,
   type ManualFlightInput,
+  type ManualFlightRecord,
 } from './manualFlight';
 
 export interface LegacyFlightConversionResult {
   inputs: ManualFlightInput[];
+  skipped: number;
+}
+
+export interface LegacyFlightRecordConversionResult {
+  records: ManualFlightRecord[];
   skipped: number;
 }
 
@@ -34,6 +43,7 @@ function endpointSnapshot(
       municipality: city || entry?.municipality || '',
       countryCode: entry?.countryCode ?? '',
       countryName: countryName || entry?.countryName || '',
+      timezoneId: entry?.timezoneId,
     },
     coordinate,
   );
@@ -75,6 +85,7 @@ export function legacyFlightsToManualInputs(
 
     inputs.push({
       date,
+      ...(flight.departureTime ? { departureTime: flight.departureTime } : {}),
       departure,
       arrival,
       airline: flight.al,
@@ -85,4 +96,30 @@ export function legacyFlightsToManualInputs(
   }
 
   return { inputs, skipped };
+}
+
+/**
+ * Convert and validate legacy rows before the repository is touched. Expected
+ * row-level validation failures are skipped, while unexpected failures still
+ * abort the whole preflight so callers can retain atomic merge semantics.
+ */
+export function legacyFlightsToManualRecords(
+  flights: readonly Flight[],
+  catalog: Pick<AirportSearchCatalog, 'findByIata'>,
+  factoriesForIndex: (index: number) => ManualFlightFactories = () => ({}),
+): LegacyFlightRecordConversionResult {
+  const converted = legacyFlightsToManualInputs(flights, catalog);
+  const records: ManualFlightRecord[] = [];
+  let skipped = converted.skipped;
+
+  converted.inputs.forEach((input, index) => {
+    try {
+      records.push(createManualFlight(input, factoriesForIndex(index)));
+    } catch (error) {
+      if (!(error instanceof ManualFlightValidationError)) throw error;
+      skipped += 1;
+    }
+  });
+
+  return { records, skipped };
 }

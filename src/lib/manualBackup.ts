@@ -9,7 +9,8 @@ import type {
 } from '../storage/sessionManualFlightRepository';
 
 export const MANUAL_BACKUP_FORMAT = 'personal-flight-log-backup';
-export const MANUAL_BACKUP_SCHEMA_VERSION = 1 as const;
+export const LEGACY_MANUAL_BACKUP_SCHEMA_VERSION = 1 as const;
+export const MANUAL_BACKUP_SCHEMA_VERSION = 2 as const;
 
 export interface ManualFlightBackup {
   format: typeof MANUAL_BACKUP_FORMAT;
@@ -89,16 +90,14 @@ export function validateManualFlightBackup(value: unknown): ManualFlightBackup {
   if (source.format !== MANUAL_BACKUP_FORMAT) {
     throw new ManualBackupValidationError('invalid_format', 'Flight Log JSON 백업 파일이 아닙니다.');
   }
-  if (source.schemaVersion !== MANUAL_BACKUP_SCHEMA_VERSION) {
+  const isLegacyBackup = source.schemaVersion === LEGACY_MANUAL_BACKUP_SCHEMA_VERSION
+    && source.flightSchemaVersion === 1;
+  const isCurrentBackup = source.schemaVersion === MANUAL_BACKUP_SCHEMA_VERSION
+    && source.flightSchemaVersion === MANUAL_FLIGHT_SCHEMA_VERSION;
+  if (!isLegacyBackup && !isCurrentBackup) {
     throw new ManualBackupValidationError(
       'unsupported_version',
-      '지원하지 않는 JSON 백업 버전입니다.',
-    );
-  }
-  if (source.flightSchemaVersion !== MANUAL_FLIGHT_SCHEMA_VERSION) {
-    throw new ManualBackupValidationError(
-      'unsupported_version',
-      '지원하지 않는 비행 기록 스키마 버전입니다.',
+      '지원하지 않는 JSON 백업 또는 비행 기록 스키마 버전입니다.',
     );
   }
   if (!isoInstant(source.exportedAt)) {
@@ -110,7 +109,19 @@ export function validateManualFlightBackup(value: unknown): ManualFlightBackup {
 
   let flights: ManualFlightRecord[];
   try {
-    flights = source.flights.map((value) => validateManualFlightRecord(value));
+    flights = source.flights.map((value, index) => {
+      if (
+        typeof value === 'object'
+        && value !== null
+        && !Array.isArray(value)
+        && (value as Record<string, unknown>).schemaVersion !== source.flightSchemaVersion
+      ) {
+        throw new Error(
+          `백업의 ${index + 1}번째 비행 기록 스키마 버전이 백업 선언과 일치하지 않습니다.`,
+        );
+      }
+      return validateManualFlightRecord(value);
+    });
   } catch (error) {
     throw new ManualBackupValidationError(
       'invalid_flights',
@@ -131,6 +142,7 @@ export function validateManualFlightBackup(value: unknown): ManualFlightBackup {
 
   return {
     format: MANUAL_BACKUP_FORMAT,
+    // V1 files normalize in memory. New serialization always emits V2.
     schemaVersion: MANUAL_BACKUP_SCHEMA_VERSION,
     flightSchemaVersion: MANUAL_FLIGHT_SCHEMA_VERSION,
     exportedAt: source.exportedAt,

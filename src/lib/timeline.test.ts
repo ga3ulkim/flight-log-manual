@@ -32,6 +32,26 @@ describe('groupFlightsForTimeline', () => {
     expect(input.map((flight) => flight.id)).toEqual([10, 11]);
   });
 
+  it('shows same-day timed flights newest-first and untimed records afterward', () => {
+    const groups = groupFlightsForTimeline([
+      makeFlight({ id: 8, d: '2099.04.02', sortKey: '2099.04.02' }),
+      makeFlight({
+        id: 9,
+        d: '2099.04.02',
+        sortKey: '2099.04.02 08:30',
+        departureTime: '08:30',
+      }),
+      makeFlight({
+        id: 10,
+        d: '2099.04.02',
+        sortKey: '2099.04.02 16:00',
+        departureTime: '16:00',
+      }),
+    ]);
+
+    expect(groups[0].flights.map((flight) => flight.id)).toEqual([10, 9, 8]);
+  });
+
   it('keeps undated records in an honest final group', () => {
     const groups = groupFlightsForTimeline([
       makeFlight({ id: 1, y: null, d: '', sortKey: '9999.99.99' }),

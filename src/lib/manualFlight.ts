@@ -1,6 +1,11 @@
 import type { Flight, FlightType } from '../types';
+import {
+  isValidIanaTimeZoneId,
+  resolveDepartureLocalDateTime,
+} from './flightTiming';
 
-export const MANUAL_FLIGHT_SCHEMA_VERSION = 1 as const;
+export const LEGACY_MANUAL_FLIGHT_SCHEMA_VERSION = 1 as const;
+export const MANUAL_FLIGHT_SCHEMA_VERSION = 2 as const;
 
 export type ManualFlightClassification = FlightType;
 export type InferredManualFlightClassification = FlightType | null;
@@ -13,6 +18,8 @@ export interface ManualAirportSnapshot {
   countryName: string;
   latitude: number | null;
   longitude: number | null;
+  /** IANA zone captured when the endpoint was selected; absent if unresolved. */
+  timezoneId?: string;
 }
 
 export interface ManualAirportSnapshotSource {
@@ -23,13 +30,25 @@ export interface ManualAirportSnapshotSource {
   countryName?: string;
   latitude?: number | null;
   longitude?: number | null;
+  timezoneId?: string;
+}
+
+export interface ManualAirlineSnapshot {
+  name: string;
+  iata: string;
+  icao: string;
+  /** Display country captured to distinguish same-name catalog entities. */
+  country?: string;
 }
 
 export interface ManualFlightInput {
   date: string;
+  /** Local wall-clock time at departure, never a browser/UTC timestamp. */
+  departureTime?: string;
   departure: ManualAirportSnapshot;
   arrival: ManualAirportSnapshot;
   airline?: string;
+  airlineSnapshot?: ManualAirlineSnapshot;
   flightNumber?: string;
   aircraft?: string;
   /** Required only when one or both airport country codes are unavailable. */
@@ -40,10 +59,12 @@ export interface ManualFlightRecord {
   schemaVersion: typeof MANUAL_FLIGHT_SCHEMA_VERSION;
   id: string;
   date: string;
+  departureTime?: string;
   departure: ManualAirportSnapshot;
   arrival: ManualAirportSnapshot;
   type: ManualFlightClassification;
   airline: string;
+  airlineSnapshot?: ManualAirlineSnapshot;
   flightNumber: string;
   aircraft: string;
   createdAt: string;
@@ -87,6 +108,85 @@ function isRecord(value: unknown): value is UnknownRecord {
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+export function isValidDepartureTime(value: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function optionalTime(value: unknown, issues: ManualFlightValidationIssue[]): string | undefined {
+  const normalized = text(value);
+  if (!normalized) return undefined;
+  if (!isValidDepartureTime(normalized)) {
+    issues.push({
+      path: 'departureTime',
+      code: 'time_only',
+      message: '출발 시간은 HH:mm 형식의 올바른 시간이어야 합니다.',
+    });
+    return undefined;
+  }
+  return normalized;
+}
+
+function optionalTimeZoneId(
+  value: unknown,
+  path: string,
+  issues: ManualFlightValidationIssue[],
+): string | undefined {
+  const normalized = text(value);
+  if (!normalized) return undefined;
+  if (!isValidIanaTimeZoneId(normalized)) {
+    issues.push({
+      path,
+      code: 'timezone_id',
+      message: `${path}은 올바른 IANA 시간대 ID여야 합니다.`,
+    });
+    return undefined;
+  }
+  return normalized;
+}
+
+function normalizeAirlineSnapshot(
+  value: unknown,
+  airline: string,
+  issues: ManualFlightValidationIssue[],
+): ManualAirlineSnapshot | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    issues.push({
+      path: 'airlineSnapshot',
+      code: 'airline_snapshot',
+      message: '선택한 항공사 정보 형식이 올바르지 않습니다.',
+    });
+    return undefined;
+  }
+
+  const name = text(value.name);
+  const iata = text(value.iata).toUpperCase();
+  const icao = text(value.icao).toUpperCase();
+  const country = text(value.country);
+  if (!name || name !== airline) {
+    issues.push({
+      path: 'airlineSnapshot.name',
+      code: 'airline_snapshot_name',
+      message: '선택한 항공사의 이름은 항공사 입력값과 같아야 합니다.',
+    });
+  }
+  if (iata && !/^[A-Z0-9]{2}$/.test(iata)) {
+    issues.push({
+      path: 'airlineSnapshot.iata',
+      code: 'airline_iata',
+      message: '항공사 IATA 코드는 영문자/숫자 2자여야 합니다.',
+    });
+  }
+  if (icao && !/^[A-Z]{3}$/.test(icao)) {
+    issues.push({
+      path: 'airlineSnapshot.icao',
+      code: 'airline_icao',
+      message: '항공사 ICAO 코드는 영문 3자여야 합니다.',
+    });
+  }
+  return { name, iata, icao, ...(country ? { country } : {}) };
 }
 
 function hasUnsafeIdCharacter(value: string): boolean {
@@ -179,6 +279,12 @@ function normalizeAirport(
     });
   }
 
+  const timezoneId = optionalTimeZoneId(
+    airport.timezoneId,
+    `${path}.timezoneId`,
+    issues,
+  );
+
   return {
     iata,
     name: text(airport.name),
@@ -187,6 +293,7 @@ function normalizeAirport(
     countryName: text(airport.countryName),
     latitude,
     longitude,
+    ...(timezoneId ? { timezoneId } : {}),
   };
 }
 
@@ -232,6 +339,8 @@ function normalizedInput(value: unknown): ManualFlightInput & {
     });
   }
 
+  const departureTime = optionalTime(input.departureTime, issues);
+
   const departure = normalizeAirport(input.departure, 'departure', issues);
   const arrival = normalizeAirport(input.arrival, 'arrival', issues);
   if (departure.iata && departure.iata === arrival.iata) {
@@ -258,12 +367,41 @@ function normalizedInput(value: unknown): ManualFlightInput & {
     });
   }
 
+
+  if (departureTime && departure.timezoneId && isValidDateOnly(date)) {
+    const resolution = resolveDepartureLocalDateTime(
+      date,
+      departureTime,
+      departure.timezoneId,
+    );
+    if (resolution.status === 'invalid') {
+      issues.push({
+        path: 'departureTime',
+        code: resolution.reason === 'nonexistent_local_time'
+          ? 'nonexistent_local_time'
+          : 'departure_datetime',
+        message: resolution.reason === 'nonexistent_local_time'
+          ? '이 현지 출발 시간은 서머타임 전환으로 존재하지 않습니다.'
+          : '출발 공항의 현지 날짜와 시간을 해석할 수 없습니다.',
+      });
+    }
+  }
+
+  const airline = text(input.airline);
+  const airlineSnapshot = normalizeAirlineSnapshot(
+    input.airlineSnapshot,
+    airline,
+    issues,
+  );
+
   if (issues.length) throw new ManualFlightValidationError(issues);
   return {
     date,
+    ...(departureTime ? { departureTime } : {}),
     departure,
     arrival,
-    airline: text(input.airline),
+    airline,
+    ...(airlineSnapshot ? { airlineSnapshot } : {}),
     flightNumber: text(input.flightNumber),
     aircraft: text(input.aircraft),
     type: inferredType ?? explicitType!,
@@ -310,6 +448,9 @@ function freezeRecord(record: ManualFlightRecord): ManualFlightRecord {
     ...record,
     departure: freezeAirport(record.departure),
     arrival: freezeAirport(record.arrival),
+    ...(record.airlineSnapshot
+      ? { airlineSnapshot: Object.freeze({ ...record.airlineSnapshot }) }
+      : {}),
   });
 }
 
@@ -342,11 +483,13 @@ export function updateManualFlight(
   const current = validateManualFlightRecord(currentValue);
   const input = normalizedInput(nextValue);
   const requestedUpdatedAt = canonicalInstant(factories.now);
-  const updatedAt = new Date(Math.max(
-    Date.parse(requestedUpdatedAt),
-    Date.parse(current.createdAt),
-    Date.parse(current.updatedAt),
-  )).toISOString();
+  const requestedUpdatedAtMs = Date.parse(requestedUpdatedAt);
+  const currentUpdatedAtMs = Date.parse(current.updatedAt);
+  const updatedAt = new Date(
+    requestedUpdatedAtMs > currentUpdatedAtMs
+      ? requestedUpdatedAtMs
+      : currentUpdatedAtMs + 1,
+  ).toISOString();
   return freezeRecord({
     schemaVersion: MANUAL_FLIGHT_SCHEMA_VERSION,
     id: current.id,
@@ -356,7 +499,24 @@ export function updateManualFlight(
   });
 }
 
-/** Validate and return a detached, immutable canonical V1 record. */
+function withoutV2Fields(value: UnknownRecord): UnknownRecord {
+  const withoutAirportTimezone = (airport: unknown): unknown => {
+    if (!isRecord(airport)) return airport;
+    const legacyAirport = { ...airport };
+    delete legacyAirport.timezoneId;
+    return legacyAirport;
+  };
+  const legacyRecord = { ...value };
+  delete legacyRecord.departureTime;
+  delete legacyRecord.airlineSnapshot;
+  return {
+    ...legacyRecord,
+    departure: withoutAirportTimezone(value.departure),
+    arrival: withoutAirportTimezone(value.arrival),
+  };
+}
+
+/** Validate/migrate and return a detached, immutable canonical V2 record. */
 export function validateManualFlightRecord(value: unknown): ManualFlightRecord {
   const issues: ManualFlightValidationIssue[] = [];
   if (!isRecord(value)) {
@@ -365,7 +525,11 @@ export function validateManualFlightRecord(value: unknown): ManualFlightRecord {
     ]);
   }
 
-  if (value.schemaVersion !== MANUAL_FLIGHT_SCHEMA_VERSION) {
+  const sourceVersion = value.schemaVersion;
+  if (
+    sourceVersion !== LEGACY_MANUAL_FLIGHT_SCHEMA_VERSION
+    && sourceVersion !== MANUAL_FLIGHT_SCHEMA_VERSION
+  ) {
     issues.push({
       path: 'schemaVersion',
       code: 'schema_version',
@@ -380,7 +544,13 @@ export function validateManualFlightRecord(value: unknown): ManualFlightRecord {
 
   let input: ReturnType<typeof normalizedInput> | null = null;
   try {
-    input = normalizedInput(value);
+    // V1 backups predate time/timezone/airline snapshots. Ignore any fields
+    // claiming those semantics unless the record explicitly opts into V2.
+    input = normalizedInput(
+      sourceVersion === LEGACY_MANUAL_FLIGHT_SCHEMA_VERSION
+        ? withoutV2Fields(value)
+        : value,
+    );
   } catch (error) {
     if (error instanceof ManualFlightValidationError) issues.push(...error.issues);
     else throw error;
@@ -431,6 +601,7 @@ export function manualFlightToFlight(
 ): ManualAdaptedFlight {
   const record = validateManualFlightRecord(recordValue);
   const displayDate = record.date.replace(/-/g, '.');
+  const airlineSnapshot = record.airlineSnapshot;
   return {
     id: visualizationId ?? numericId(record.id),
     manualId: record.id,
@@ -448,7 +619,18 @@ export function manualFlightToFlight(
     ac: record.aircraft,
     d: displayDate,
     y: Number(record.date.slice(0, 4)),
-    sortKey: displayDate,
+    ...(record.departureTime ? { departureTime: record.departureTime } : {}),
+    ...(record.departure.timezoneId
+      ? { departureTimeZoneId: record.departure.timezoneId }
+      : {}),
+    ...(record.arrival.timezoneId
+      ? { arrivalTimeZoneId: record.arrival.timezoneId }
+      : {}),
+    ...(airlineSnapshot?.iata ? { airlineIata: airlineSnapshot.iata } : {}),
+    ...(airlineSnapshot?.icao ? { airlineIcao: airlineSnapshot.icao } : {}),
+    sortKey: record.departureTime
+      ? `${displayDate} ${record.departureTime}`
+      : displayDate,
     departureSnapshot: record.departure,
     arrivalSnapshot: record.arrival,
   };

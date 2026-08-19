@@ -5,6 +5,7 @@ import {
   createManualFlight,
   inferManualFlightType,
   isValidDateOnly,
+  isValidDepartureTime,
   manualFlightToFlight,
   manualFlightsToFlights,
   updateManualFlight,
@@ -130,6 +131,112 @@ describe('manual flight domain', () => {
     });
   });
 
+  it('accepts an optional minute-precision departure time and allows clearing it', () => {
+    expect(isValidDepartureTime('14:30')).toBe(true);
+    expect(isValidDepartureTime('24:00')).toBe(false);
+    expect(isValidDepartureTime('12:60')).toBe(false);
+
+    const dateOnly = record('date-only', { departureTime: '' });
+    expect(dateOnly.departureTime).toBeUndefined();
+
+    const timed = record('timed', { departureTime: '14:30' });
+    expect(timed.departureTime).toBe('14:30');
+    const preserved = updateManualFlight(timed, input({ departureTime: timed.departureTime }), {
+      now: () => new Date('2025-02-02T00:00:00Z'),
+    });
+    expect(preserved.departureTime).toBe('14:30');
+    const cleared = updateManualFlight(preserved, input({ departureTime: '' }), {
+      now: () => new Date('2025-02-03T00:00:00Z'),
+    });
+    expect(cleared.departureTime).toBeUndefined();
+
+    expect(() => record('bad-hour', { departureTime: '24:00' })).toThrow(/HH:mm/);
+    expect(() => record('bad-minute', { departureTime: '12:60' })).toThrow(/HH:mm/);
+  });
+
+  it('snapshots IANA timezones and selected airline codes in the adapted flight', () => {
+    const saved = record('snapshot-v2', {
+      departureTime: '14:30',
+      departure: airport('ICN', 'KR', { timezoneId: 'Asia/Seoul' }),
+      arrival: airport('LAX', 'US', {
+        latitude: 33.9425,
+        longitude: -118.4081,
+        timezoneId: 'America/Los_Angeles',
+      }),
+      airline: 'Korean Air',
+      airlineSnapshot: {
+        name: 'Korean Air',
+        iata: 'ke',
+        icao: 'kal',
+        country: '  South Korea  ',
+      },
+    });
+    expect(saved).toMatchObject({
+      schemaVersion: 2,
+      departureTime: '14:30',
+      departure: { timezoneId: 'Asia/Seoul' },
+      arrival: { timezoneId: 'America/Los_Angeles' },
+      airlineSnapshot: {
+        name: 'Korean Air',
+        iata: 'KE',
+        icao: 'KAL',
+        country: 'South Korea',
+      },
+    });
+    expect(manualFlightToFlight(saved)).toMatchObject({
+      departureTime: '14:30',
+      departureTimeZoneId: 'Asia/Seoul',
+      arrivalTimeZoneId: 'America/Los_Angeles',
+      airlineIata: 'KE',
+      airlineIcao: 'KAL',
+      sortKey: '2025.01.21 14:30',
+    });
+    expect(() => record('bad-airline-snapshot', {
+      airline: 'Free Text Air',
+      airlineSnapshot: { name: 'Different Air', iata: 'XX', icao: 'XXX' },
+    })).toThrow(/airline|\uD56D\uACF5\uC0AC/i);
+  });
+
+  it('rejects a nonexistent DST-forward local time but accepts repeated time deterministically', () => {
+    const newYork = airport('JFK', 'US', {
+      latitude: 40.6399,
+      longitude: -73.7787,
+      timezoneId: 'America/New_York',
+    });
+    expect(() => record('dst-gap', {
+      date: '2026-03-08',
+      departureTime: '02:30',
+      departure: newYork,
+    })).toThrow(/\uC11C\uBA38\uD0C0\uC784/);
+    expect(record('dst-overlap', {
+      date: '2026-11-01',
+      departureTime: '01:30',
+      departure: newYork,
+    }).departureTime).toBe('01:30');
+  });
+
+  it('migrates a V1 record without inventing time, timezone, or airline metadata', () => {
+    const current = record('legacy-source', {
+      departureTime: '14:30',
+      departure: airport('ICN', 'KR', { timezoneId: 'Asia/Seoul' }),
+      arrival: airport('NRT', 'JP', { timezoneId: 'Asia/Tokyo' }),
+      airlineSnapshot: { name: 'Example Air', iata: 'EX', icao: 'EXP' },
+    });
+    const legacy = {
+      ...current,
+      schemaVersion: 1,
+      departure: { ...current.departure, timezoneId: 'Asia/Seoul' },
+      arrival: { ...current.arrival, timezoneId: 'Asia/Tokyo' },
+    };
+    const migrated = validateManualFlightRecord(legacy);
+
+    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.departureTime).toBeUndefined();
+    expect(migrated.departure.timezoneId).toBeUndefined();
+    expect(migrated.arrival.timezoneId).toBeUndefined();
+    expect(migrated.airlineSnapshot).toBeUndefined();
+  });
+
   it('trims optional fields and canonicalizes airport and country codes', () => {
     const saved = record('trim-1', {
       departure: airport('icn', 'kr', { name: '  Airport  ' }),
@@ -168,7 +275,7 @@ describe('manual flight domain', () => {
     expect(updated.airline).toBe('Updated Air');
   });
 
-  it('keeps an edit valid when the device clock is behind imported metadata', () => {
+  it('advances an edit by one millisecond when the device clock is behind imported metadata', () => {
     const future = createManualFlight(input(), {
       generateId: () => 'future-clock-id',
       now: () => new Date('2030-01-01T00:00:00Z'),
@@ -177,8 +284,8 @@ describe('manual flight domain', () => {
       now: () => new Date('2026-08-19T00:00:00Z'),
     });
 
-    expect(updated.updatedAt).toBe('2030-01-01T00:00:00.000Z');
-    expect(updated.updatedAt).toBe(future.updatedAt);
+    expect(updated.updatedAt).toBe('2030-01-01T00:00:00.001Z');
+    expect(Date.parse(updated.updatedAt)).toBe(Date.parse(future.updatedAt) + 1);
     expect(validateManualFlightRecord(updated)).toEqual(updated);
   });
 

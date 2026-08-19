@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { ManualFlightRecord } from './manualFlight';
+import {
+  MANUAL_FLIGHT_SCHEMA_VERSION,
+  type ManualFlightRecord,
+} from './manualFlight';
 import { manualCoordinateOverrides } from './manualCoordinates';
 
 function record(
@@ -18,7 +21,7 @@ function record(
     longitude: latitude == null ? null : 127,
   };
   return {
-    schemaVersion: 1,
+    schemaVersion: MANUAL_FLIGHT_SCHEMA_VERSION,
     id,
     date: '2025-01-21',
     departure: airport,

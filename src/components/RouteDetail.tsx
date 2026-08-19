@@ -1,9 +1,16 @@
 import type { RouteRecord } from '../types';
+import { compareFlightsChronologically } from '../lib/flightOrdering';
 
 interface RouteDetailProps {
   route: RouteRecord;
   distanceKm: number | null;
   onClose: () => void;
+}
+
+function dateTimeValue(date: string, time?: string): string | undefined {
+  if (!/^\d{4}\.\d{2}\.\d{2}$/.test(date)) return undefined;
+  const canonicalDate = date.replace(/\./g, '-');
+  return time ? `${canonicalDate}T${time}` : canonicalDate;
 }
 
 export default function RouteDetail({ route, distanceKm, onClose }: RouteDetailProps) {
@@ -30,16 +37,25 @@ export default function RouteDetail({ route, distanceKm, onClose }: RouteDetailP
       <ol className="flc-route-list">
         {route.items
           .slice()
-          .sort((a, b) =>
-            a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : a.id - b.id,
-          )
+          .sort(compareFlightsChronologically)
           .map((flight) => (
             <li
               key={flight.id}
               className="flc-route-row"
               data-flight-type={flight.type === '국제선' ? 'international' : 'domestic'}
             >
-              <time className="flc-route-date">{flight.d || '—'}</time>
+              <div className="flc-route-date">
+                <time dateTime={dateTimeValue(flight.d)}>{flight.d || '—'}</time>
+                {flight.departureTime && (
+                  <time
+                    className="flc-route-time"
+                    dateTime={dateTimeValue(flight.d, flight.departureTime)}
+                    aria-label={`출발 공항 현지 시각 ${flight.departureTime}`}
+                  >
+                    {flight.departureTime} <span aria-hidden="true">LOCAL</span>
+                  </time>
+                )}
+              </div>
               <div className="flc-route-main">
                 <b>
                   {flight.fa}→{flight.ta}

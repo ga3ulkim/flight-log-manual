@@ -159,13 +159,14 @@ describe('generated airport search snapshot', () => {
 
     let previousCode = '';
     GENERATED_AIRPORT_SEARCH_INDEX.forEach(
-      ([iata, name, municipality, countryCode], index) => {
+      ([iata, name, municipality, countryCode, timezoneId], index) => {
         expect(iata).toMatch(/^[A-Z]{3}$/);
         expect(iata > previousCode).toBe(true);
         expect(iata).toBe(coordinateCodes[index]);
         expect(name.trim().length).toBeGreaterThan(0);
         expect(typeof municipality).toBe('string');
         expect(countryCode).toMatch(/^[A-Z]{2}$/);
+        expect(timezoneId).toMatch(/^[A-Za-z_+-]+(?:\/[A-Za-z0-9_+-]+)+$/);
         previousCode = iata;
       },
     );
@@ -195,5 +196,20 @@ describe('generated airport search snapshot', () => {
     expect(generatedCatalog.search('오사카').slice(0, 2).map(({ iata }) => iata))
       .toEqual(['KIX', 'ITM']);
     expect(generatedCatalog.search('서울', 1)).toHaveLength(1);
+  });
+
+  it('retains representative build-time IANA timezone metadata', async () => {
+    const generatedCatalog = await loadAirportSearchCatalog();
+    const expected = {
+      ICN: 'Asia/Seoul',
+      LAX: 'America/Los_Angeles',
+      NRT: 'Asia/Tokyo',
+      JFK: 'America/New_York',
+      LHR: 'Europe/London',
+      SIN: 'Asia/Singapore',
+    } as const;
+    for (const [iata, timezoneId] of Object.entries(expected)) {
+      expect(generatedCatalog.findByIata(iata)?.timezoneId).toBe(timezoneId);
+    }
   });
 });

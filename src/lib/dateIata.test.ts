@@ -14,7 +14,22 @@ describe('parseDateInfo', () => {
     expect(parseDateInfo('2098.3.7 09:15')).toEqual({
       y: 2098,
       d: '2098.03.07',
-      sortKey: '2098.03.07',
+      departureTime: '09:15',
+      sortKey: '2098.03.07 09:15',
+    });
+  });
+
+  it('extracts optional local time from dashed or dotted full dates', () => {
+    expect(parseDateInfo('2026-08-19 14:30')).toEqual({
+      y: 2026,
+      d: '2026.08.19',
+      departureTime: '14:30',
+      sortKey: '2026.08.19 14:30',
+    });
+    expect(parseDateInfo('2026.08.19')).toEqual({
+      y: 2026,
+      d: '2026.08.19',
+      sortKey: '2026.08.19',
     });
   });
 

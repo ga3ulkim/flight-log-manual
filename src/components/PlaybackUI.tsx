@@ -1,4 +1,9 @@
+import { useMemo } from 'react';
 import type { Flight, PlaybackState } from '../types';
+import {
+  estimateFlightTiming,
+  formatEstimatedDurationKo,
+} from '../lib/flightTiming';
 import type { TransferMode } from '../lib/landSeaTransfer';
 
 interface PlaybackUIProps {
@@ -13,6 +18,10 @@ interface PlaybackUIProps {
   onCycleSpeed: () => void;
 }
 
+function localDateTimeValue(date: string, time: string): string {
+  return `${date.replace(/\./g, '-')}T${time}`;
+}
+
 export default function PlaybackUI({
   play,
   active,
@@ -25,6 +34,12 @@ export default function PlaybackUI({
   onCycleSpeed,
 }: PlaybackUIProps) {
   const transferActive = play.hold > 0 && nextFlight !== undefined;
+  const timing = useMemo(
+    () => currentFlight && !transferActive
+      ? estimateFlightTiming(currentFlight)
+      : null,
+    [currentFlight, transferActive],
+  );
   const transferLabel = transferActive
     ? `${transferMode === 'sea' ? '해상 이동' : '지상 이동'} → ${nextFlight.fa}`
     : null;
@@ -65,6 +80,38 @@ export default function PlaybackUI({
               {currentFlight.fn ? ` · ${currentFlight.fn}` : ''}
               {currentFlight.ac ? ` · ${currentFlight.ac}` : ''}
             </div>
+          )}
+          {timing?.status === 'available' && (
+            <dl className="flc-playback-timing" aria-label="비행 현지 시각 추정">
+              <div>
+                <dt>출발 · {currentFlight.fa}</dt>
+                <dd>
+                  <time
+                    dateTime={localDateTimeValue(timing.departure.date, timing.departure.time)}
+                    title={timing.departure.timeZoneId}
+                  >
+                    {timing.departure.date} {timing.departure.time}
+                  </time>
+                  <span>LOCAL</span>
+                </dd>
+              </div>
+              <div>
+                <dt>예상 도착 · {currentFlight.ta}</dt>
+                <dd>
+                  <time
+                    dateTime={localDateTimeValue(timing.arrival.date, timing.arrival.time)}
+                    title={timing.arrival.timeZoneId}
+                  >
+                    {timing.arrival.date} {timing.arrival.time}
+                  </time>
+                  <span>LOCAL</span>
+                </dd>
+              </div>
+              <div>
+                <dt>예상 비행시간</dt>
+                <dd>{formatEstimatedDurationKo(timing.durationMinutes)}</dd>
+              </div>
+            </dl>
           )}
           <div
             className="flc-progress-track"

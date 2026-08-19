@@ -3,6 +3,7 @@ import {
   EXPECTED_AIRPORT_COLUMNS,
   buildAirportIndex,
   formatGeneratedAirportSearchModule,
+  resolveAirportTimeZone,
   resolveDuplicateIata,
   validateAirportIndex,
   validateAirportSearchIndex,
@@ -128,6 +129,9 @@ describe('OurAirports generation', () => {
     const coordinates = { AAA: [1, 2], BBB: [3, 4] };
 
     expect(validateAirportSearchIndex(rows, coordinates)).toBe(2);
+    expect(() => validateAirportSearchIndex(rows, coordinates, {
+      requireTimezones: true,
+    })).toThrow(/timezone is missing/);
     expect(() =>
       validateAirportSearchIndex([...rows].reverse()),
     ).toThrow(/not sorted/);
@@ -144,15 +148,81 @@ describe('OurAirports generation', () => {
 
   it('formats a compact typed search module with provenance', () => {
     const generated = formatGeneratedAirportSearchModule(
-      [['TST', 'Synthetic Test Airport', 'Test City', 'ZZ']],
+      [['TST', 'Synthetic Test Airport', 'Test City', 'ZZ', 'Etc/UTC']],
       'search-digest',
     );
 
     expect(generated).toContain('GENERATED_AIRPORT_SEARCH_COUNT = 1');
     expect(generated).toContain('OURAIRPORTS_SEARCH_SHA256 = "search-digest"');
+    expect(generated).toContain('AIRPORT_TIMEZONE_RESOLVER = "geo-tz@8.1.8/all"');
+    expect(generated).toContain('AIRPORT_TIMEZONE_BOUNDARY_RELEASE = "2026c"');
+    expect(generated).toContain('AIRPORT_TIMEZONE_BOUNDARY_LICENSE = "ODbL-1.0"');
     expect(generated).toContain(
-      '["TST","Synthetic Test Airport","Test City","ZZ"]',
+      '["TST","Synthetic Test Airport","Test City","ZZ","Etc/UTC"]',
     );
     expect(generated).not.toContain('latitude');
+  });
+
+  it('resolves one timezone and requires a reviewed choice for multi-hit coordinates', () => {
+    expect(resolveAirportTimeZone('TST', 1, 2, () => ['Asia/Seoul'])).toEqual({
+      timezoneId: 'Asia/Seoul',
+      candidates: ['Asia/Seoul'],
+    });
+    expect(() => resolveAirportTimeZone(
+      'TST',
+      1,
+      2,
+      () => ['Asia/Shanghai', 'Asia/Urumqi'],
+    )).toThrow(/Ambiguous timezone/);
+    expect(resolveAirportTimeZone(
+      'TST',
+      1,
+      2,
+      () => ['Asia/Urumqi', 'Asia/Shanghai', 'Asia/Urumqi'],
+      { TST: 'Asia/Shanghai' },
+    )).toEqual({
+      timezoneId: 'Asia/Shanghai',
+      candidates: ['Asia/Urumqi', 'Asia/Shanghai'],
+    });
+  });
+
+  it('rejects zero-hit, invalid, and stale explicit timezone resolutions', () => {
+    expect(() => resolveAirportTimeZone('TST', 1, 2, () => [])).toThrow(/no timezone/);
+    expect(() => resolveAirportTimeZone('TST', 1, 2, () => ['+09:00']))
+      .toThrow(/invalid IANA/);
+    expect(() => resolveAirportTimeZone(
+      'TST',
+      1,
+      2,
+      () => ['Asia/Seoul', 'Asia/Tokyo'],
+      { TST: 'Europe/London' },
+    )).toThrow(/is not among/);
+    expect(() => resolveAirportTimeZone(
+      'TST',
+      1,
+      2,
+      () => ['Asia/Seoul'],
+      { TST: 'Asia/Seoul' },
+    )).toThrow(/Stale timezone selection/);
+
+    expect(() => buildAirportIndex(csv([airportRow()]), {
+      timeZoneResolver: () => ['Asia/Seoul'],
+      timezoneSelections: { OLD: 'Asia/Seoul' },
+    })).toThrow(/unknown airport codes: OLD/);
+  });
+
+  it('adds resolved timezone metadata and reports multi-zone selections', () => {
+    const result = buildAirportIndex(csv([airportRow()]), {
+      timeZoneResolver: () => ['Asia/Seoul', 'Asia/Tokyo'],
+      timezoneSelections: { TST: 'Asia/Seoul' },
+    });
+    expect(result.searchEntries).toEqual([
+      ['TST', 'Synthetic Test Airport', 'Test City', 'ZZ', 'Asia/Seoul'],
+    ]);
+    expect(result.stats).toMatchObject({
+      timezoneResolved: 1,
+      timezoneUnresolved: 0,
+      timezoneMultiple: 1,
+    });
   });
 });

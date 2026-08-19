@@ -3,6 +3,7 @@ import {
   updateManualFlight,
   validateManualFlightRecord,
 } from '../lib/manualFlight';
+import { compareOptionalDepartureTimes } from '../lib/flightOrdering';
 import type {
   ManualFlightFactories,
   ManualFlightInput,
@@ -61,6 +62,11 @@ export function sortManualFlightRecords(
 ): ManualFlightRecord[] {
   return [...records].sort((left, right) =>
     left.date.localeCompare(right.date)
+    || compareOptionalDepartureTimes(
+      left.departureTime,
+      right.departureTime,
+      'ascending',
+    )
     || Date.parse(left.createdAt) - Date.parse(right.createdAt)
     || left.id.localeCompare(right.id));
 }

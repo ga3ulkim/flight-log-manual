@@ -72,19 +72,72 @@ function repository(): InMemoryManualFlightRepository {
 }
 
 describe('manual JSON backup', () => {
-  it('exports a versioned format and round-trips every airport snapshot field', () => {
-    const flight = saved('round-trip');
+  it('exports V2 and round-trips optional time, timezone, and airline snapshots', () => {
+    const flight = saved('round-trip', '2025-02-01T00:00:00Z', {
+      departureTime: '14:30',
+      departure: {
+        ...airport('ICN', 'KR', 37.4602, 126.4407),
+        timezoneId: 'Asia/Seoul',
+      },
+      arrival: {
+        ...airport('NRT', 'JP', 35.772, 140.3929),
+        timezoneId: 'Asia/Tokyo',
+      },
+      airlineSnapshot: {
+        name: 'Example Airways',
+        iata: 'EX',
+        icao: 'EXP',
+        country: 'Test Country',
+      },
+    });
     const backup = createManualFlightBackup([flight], () => new Date('2026-08-19T01:02:03Z'));
     const parsed = parseManualFlightBackup(serializeManualFlightBackup(backup));
 
     expect(parsed).toEqual(backup);
     expect(parsed).toMatchObject({
       format: MANUAL_BACKUP_FORMAT,
-      schemaVersion: 1,
-      flightSchemaVersion: 1,
+      schemaVersion: 2,
+      flightSchemaVersion: 2,
       exportedAt: '2026-08-19T01:02:03.000Z',
     });
     expect(parsed.flights[0].departure).toEqual(flight.departure);
+    expect(parsed.flights[0].departureTime).toBe('14:30');
+    expect(parsed.flights[0].airlineSnapshot).toEqual(flight.airlineSnapshot);
+  });
+
+  it('accepts a V1 backup and migrates absent V2 fields without inventing values', () => {
+    const current = saved('legacy');
+    const legacyFlight = { ...current, schemaVersion: 1 };
+    const migrated = validateManualFlightBackup({
+      format: MANUAL_BACKUP_FORMAT,
+      schemaVersion: 1,
+      flightSchemaVersion: 1,
+      exportedAt: '2026-08-19T01:02:03.000Z',
+      flights: [legacyFlight],
+    });
+
+    expect(migrated).toMatchObject({ schemaVersion: 2, flightSchemaVersion: 2 });
+    expect(migrated.flights[0]).toMatchObject({ schemaVersion: 2, id: 'legacy' });
+    expect(migrated.flights[0].departureTime).toBeUndefined();
+    expect(migrated.flights[0].departure.timezoneId).toBeUndefined();
+  });
+
+  it('rejects flight records whose schema version disagrees with the backup envelope', () => {
+    const currentFlight = saved('current');
+    const currentBackup = createManualFlightBackup([currentFlight]);
+    const legacyFlight = { ...currentFlight, schemaVersion: 1 };
+
+    expect(() => validateManualFlightBackup({
+      ...currentBackup,
+      flights: [legacyFlight],
+    })).toThrowError(/기록 스키마 버전이 백업 선언과 일치하지 않습니다/);
+
+    expect(() => validateManualFlightBackup({
+      ...currentBackup,
+      schemaVersion: 1,
+      flightSchemaVersion: 1,
+      flights: [currentFlight],
+    })).toThrowError(/기록 스키마 버전이 백업 선언과 일치하지 않습니다/);
   });
 
   it('rejects invalid JSON, identifiers, future versions, records, coordinates, and duplicate IDs', () => {
@@ -94,11 +147,11 @@ describe('manual JSON backup', () => {
     })).toThrowError(/백업 파일이 아닙니다/);
 
     const valid = createManualFlightBackup([saved('one')]);
-    expect(() => validateManualFlightBackup({ ...valid, schemaVersion: 2 })).toThrowError(
-      /지원하지 않는 JSON 백업 버전/,
+    expect(() => validateManualFlightBackup({ ...valid, schemaVersion: 999 })).toThrowError(
+      /JSON 백업/,
     );
-    expect(() => validateManualFlightBackup({ ...valid, flightSchemaVersion: 2 })).toThrowError(
-      /스키마 버전/,
+    expect(() => validateManualFlightBackup({ ...valid, flightSchemaVersion: 999 })).toThrowError(
+      /스키마/,
     );
     expect(() => validateManualFlightBackup({
       ...valid,
@@ -210,6 +263,25 @@ describe('manual CSV export', () => {
       d: '2025.01.21',
       sortKey: '2025.01.21',
     });
+  });
+
+  it('combines optional local time with the Korean date without fabricating midnight', () => {
+    const timedCsv = exportManualFlightsCsv([
+      saved('csv-timed', '2025-02-01T00:00:00Z', { departureTime: '14:30' }),
+    ], { includeBom: false });
+    expect(timedCsv).toContain('2025.01.21 14:30');
+    const timedParsed = parseWorkbook(XLSX.read(timedCsv, { type: 'string' }));
+    expect(timedParsed.flights[0]).toMatchObject({
+      d: '2025.01.21',
+      departureTime: '14:30',
+      sortKey: '2025.01.21 14:30',
+    });
+
+    const dateOnlyCsv = exportManualFlightsCsv([saved('csv-date-only')], {
+      includeBom: false,
+    });
+    expect(dateOnlyCsv).toContain('2025.01.21');
+    expect(dateOnlyCsv).not.toContain('2025.01.21 00:00');
   });
 
   it('escapes commas and quotes without losing airport IATA codes', () => {

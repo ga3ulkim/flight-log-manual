@@ -1,9 +1,9 @@
-name: Refresh airport metadata
+name: Refresh Wikidata airline index
 
 on:
   schedule:
-    # 04:17 UTC on the first day of every month.
-    - cron: '17 4 1 * *'
+    # 05:23 UTC on the first day of every month, independently of airports.
+    - cron: '23 5 1 * *'
   workflow_dispatch:
 
 # The workflow updates one automation branch and opens a reviewable PR. It does
@@ -13,7 +13,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: monthly-airport-data
+  group: monthly-airline-data
   cancel-in-progress: false
 
 jobs:
@@ -35,8 +35,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Regenerate airport coordinate, search, and timezone indexes
-        run: npm run update-airports
+      - name: Regenerate local airline search index
+        run: npm run update-airlines
 
       - name: Lint
         run: npm run lint
@@ -50,31 +50,31 @@ jobs:
       - name: Build production site
         run: npm run build
 
-      - name: Check for airport data changes
+      - name: Check for airline data changes
         id: changes
         shell: bash
         run: |
-          if git diff --quiet -- src/data/generated/ourAirports.ts src/data/generated/airportSearch.ts; then
+          if git diff --quiet -- src/data/generated/airlines.ts; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Airport coordinates, search metadata, and timezones are unchanged."
+            echo "Wikidata airline search metadata is unchanged."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Airport coordinates, search metadata, or timezones changed."
+            echo "Wikidata airline search metadata changed."
           fi
 
-      - name: Open or refresh airport-data pull request
+      - name: Open or refresh airline-data pull request
         if: steps.changes.outputs.changed == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          branch="automation/monthly-ourairports"
+          branch="automation/monthly-wikidata-airlines"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin "$branch:refs/remotes/origin/$branch" || true
           git checkout -B "$branch"
-          git add src/data/generated/ourAirports.ts src/data/generated/airportSearch.ts
-          git commit -m "Update airport metadata indexes"
+          git add src/data/generated/airlines.ts
+          git commit -m "Update Wikidata airline search index"
           git push --force-with-lease origin "HEAD:refs/heads/$branch"
 
           existing_pr="$(gh pr list --state open --head "$branch" --json number --jq '.[0].number // empty')"
@@ -82,8 +82,8 @@ jobs:
             gh pr create \
               --base main \
               --head "$branch" \
-              --title "Update airport metadata indexes" \
-              --body "Monthly refresh of the public-domain OurAirports coordinate/local autocomplete snapshot and its build-time IANA timezone IDs. The updater, tests, lint, typecheck, and production build passed in GitHub Actions. Merging this PR triggers the normal Pages deployment workflow."
+              --title "Update Wikidata airline search index" \
+              --body "Monthly refresh of the local Wikidata-derived airline autocomplete snapshot. The updater, tests, lint, typecheck, and production build passed in GitHub Actions. This workflow is independent from airport-data maintenance and never accesses personal flight records. Merging this PR triggers the normal Pages deployment workflow."
           else
             echo "Updated existing pull request #$existing_pr."
           fi

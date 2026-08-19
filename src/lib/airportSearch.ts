@@ -4,6 +4,8 @@ export type AirportSearchTuple = readonly [
   name: string,
   municipality: string,
   countryCode: string,
+  /** Generated IANA timezone; optional only for legacy/synthetic fixtures. */
+  timezoneId?: string,
 ];
 
 export interface AirportSearchEntry {
@@ -13,6 +15,7 @@ export interface AirportSearchEntry {
   readonly countryCode: string;
   /** Localized when Intl.DisplayNames is available; otherwise the ISO code. */
   readonly countryName: string;
+  readonly timezoneId?: string;
 }
 
 export interface AirportSearchCatalog {
@@ -254,7 +257,7 @@ export function createAirportSearchCatalog(
   });
 
   const prepared = tuples.map((tuple) => {
-    const [rawIata, name, municipality, rawCountryCode] = tuple;
+    const [rawIata, name, municipality, rawCountryCode, timezoneId] = tuple;
     const iata = rawIata.trim().toUpperCase();
     const countryCode = rawCountryCode.trim().toUpperCase();
     let country = countries.get(countryCode);
@@ -276,6 +279,7 @@ export function createAirportSearchCatalog(
       municipality,
       countryCode,
       countryName: country.displayName,
+      ...(timezoneId ? { timezoneId } : {}),
     });
     byIata.set(iata, entry);
     return {

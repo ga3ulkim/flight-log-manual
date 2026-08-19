@@ -36,7 +36,9 @@ export function manualFlightsToCsvRows(values: readonly unknown[]): string[][] {
       countryCell(flight.arrival),
       flight.arrival.municipality,
       airportCell(flight.arrival),
-      flight.date.replace(/-/g, '.'),
+      `${flight.date.replace(/-/g, '.')}${
+        flight.departureTime ? ` ${flight.departureTime}` : ''
+      }`,
       flight.airline,
       '',
       flight.flightNumber,

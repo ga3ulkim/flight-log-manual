@@ -26,6 +26,30 @@ describe('playback ordering and adjacency', () => {
     expect(chronologicalFlights(flights).map((flight) => flight.id)).toEqual([1, 2, 4]);
   });
 
+  it('sorts same-day timed flights naturally and places untimed records afterward', () => {
+    const flights = [
+      makeFlight({ id: 1, d: '2099.01.01', sortKey: '2099.01.01' }),
+      makeFlight({
+        id: 3,
+        d: '2099.01.01',
+        sortKey: '2099.01.01 16:00',
+        departureTime: '16:00',
+      }),
+      makeFlight({
+        id: 2,
+        d: '2099.01.01',
+        sortKey: '2099.01.01 08:30',
+        departureTime: '08:30',
+      }),
+    ];
+
+    expect(chronologicalFlights(flights).map((flight) => flight.id)).toEqual([
+      2,
+      3,
+      1,
+    ]);
+  });
+
   it('distinguishes connected and disconnected sequential flights', () => {
     const current = makeFlight({ fa: 'ICN', ta: 'NRT' });
     expect(

@@ -1,6 +1,7 @@
 import type { Flight, PlaybackProgress, RouteKey } from '../types';
 import { routeKey } from './analytics';
 import { clamp, hasKnownAirport, haversine, knownAirport } from './geography';
+import { compareFlightsChronologically } from './flightOrdering';
 
 export interface PlaybackAdvance {
   progress: PlaybackProgress;
@@ -17,9 +18,7 @@ export function chronologicalFlights(flights: readonly Flight[]): Flight[] {
         flight.fa !== flight.ta,
     )
     .slice()
-    .sort((a, b) =>
-      a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : a.id - b.id,
-    );
+    .sort(compareFlightsChronologically);
 }
 
 export function areSequentialFlightsConnected(current: Flight, next: Flight): boolean {

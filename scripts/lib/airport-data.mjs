@@ -1,5 +1,7 @@
 export const OURAIRPORTS_SOURCE_URL =
   'https://davidmegginson.github.io/ourairports-data/airports.csv';
+export const GEO_TZ_VERSION = '8.1.8';
+export const TIMEZONE_BOUNDARY_BUILDER_RELEASE = '2026c';
 
 export const EXPECTED_AIRPORT_COLUMNS = Object.freeze([
   'id',
@@ -15,6 +17,7 @@ export const EXPECTED_AIRPORT_COLUMNS = Object.freeze([
 ]);
 
 const IATA_PATTERN = /^[A-Z]{3}$/;
+const FIXED_OFFSET_TIMEZONE_PATTERN = /^[+-]\d{2}(?::?\d{2})?$/;
 const AIRPORT_TYPE_SCORE = Object.freeze({
   large_airport: 60,
   medium_airport: 50,
@@ -144,6 +147,66 @@ function parseCoordinate(value, minimum, maximum) {
   return Number(coordinate.toFixed(6));
 }
 
+export function isValidIanaTimeZoneId(value) {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  const timezoneId = value.trim();
+  if (FIXED_OFFSET_TIMEZONE_PATTERN.test(timezoneId)) return false;
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: timezoneId }).format(0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve geo-tz's zero/one/many result explicitly. Boundary ambiguities must
+ * have a reviewed choice; no first-result fallback can silently enter output.
+ */
+export function resolveAirportTimeZone(
+  code,
+  latitude,
+  longitude,
+  timeZoneResolver,
+  explicitSelections = {},
+) {
+  if (typeof timeZoneResolver !== 'function') return null;
+  const rawCandidates = timeZoneResolver(latitude, longitude);
+  if (!Array.isArray(rawCandidates)) {
+    throw new Error(`Timezone resolver returned a non-array value for ${code}.`);
+  }
+  const candidates = [...new Set(rawCandidates.map((value) => String(value).trim()))];
+  if (candidates.length === 0) {
+    throw new Error(`Timezone resolver returned no timezone for ${code}.`);
+  }
+  for (const timezoneId of candidates) {
+    if (!isValidIanaTimeZoneId(timezoneId)) {
+      throw new Error(`Timezone resolver returned an invalid IANA ID for ${code}: ${timezoneId}`);
+    }
+  }
+
+  const explicitTimezoneId = explicitSelections[code];
+  if (candidates.length > 1 && !explicitTimezoneId) {
+    throw new Error(
+      `Ambiguous timezone for ${code}: ${candidates.join(', ')}. Add a reviewed selection.`,
+    );
+  }
+  if (candidates.length === 1 && explicitTimezoneId) {
+    throw new Error(
+      `Stale timezone selection for ${code}: the resolver now returns only ${candidates[0]}.`,
+    );
+  }
+  if (explicitTimezoneId && !candidates.includes(explicitTimezoneId)) {
+    throw new Error(
+      `Timezone selection ${code} -> ${explicitTimezoneId} is not among: ${candidates.join(', ')}.`,
+    );
+  }
+  return Object.freeze({
+    timezoneId: explicitTimezoneId ?? candidates[0],
+    candidates: Object.freeze(candidates),
+  });
+}
+
 export function buildAirportIndex(csvSource, options = {}) {
   const rows = parseCsvRows(csvSource.replace(/^\uFEFF/, ''));
   if (rows.length === 0) throw new Error('OurAirports CSV is empty.');
@@ -209,6 +272,8 @@ export function buildAirportIndex(csvSource, options = {}) {
   const airports = {};
   const searchEntries = [];
   const duplicateReports = [];
+  const timezoneReports = [];
+  let timezoneResolved = 0;
   for (const code of [...candidatesByCode.keys()].sort()) {
     const candidates = candidatesByCode.get(code);
     let selected = candidates[0];
@@ -227,13 +292,40 @@ export function buildAirportIndex(csvSource, options = {}) {
       });
     }
     airports[code] = Object.freeze([selected.latitude, selected.longitude]);
+    const timezoneResolution = resolveAirportTimeZone(
+      code,
+      selected.latitude,
+      selected.longitude,
+      options.timeZoneResolver,
+      options.timezoneSelections,
+    );
+    if (timezoneResolution) {
+      timezoneResolved += 1;
+      if (timezoneResolution.candidates.length > 1) {
+        timezoneReports.push(Object.freeze({
+          code,
+          candidateCount: timezoneResolution.candidates.length,
+          candidates: timezoneResolution.candidates,
+          selectedTimezoneId: timezoneResolution.timezoneId,
+        }));
+      }
+    }
     searchEntries.push(
       Object.freeze([
         code,
         selected.name,
         selected.municipality,
         selected.isoCountry.toUpperCase(),
+        ...(timezoneResolution ? [timezoneResolution.timezoneId] : []),
       ]),
+    );
+  }
+
+  const unknownTimezoneSelectionCodes = Object.keys(options.timezoneSelections ?? {})
+    .filter((code) => !candidatesByCode.has(code));
+  if (unknownTimezoneSelectionCodes.length > 0) {
+    throw new Error(
+      `Timezone selections reference unknown airport codes: ${unknownTimezoneSelectionCodes.join(', ')}`,
     );
   }
 
@@ -241,10 +333,14 @@ export function buildAirportIndex(csvSource, options = {}) {
     airports: Object.freeze(airports),
     searchEntries: Object.freeze(searchEntries),
     duplicateReports: Object.freeze(duplicateReports),
+    timezoneReports: Object.freeze(timezoneReports),
     stats: Object.freeze({
       sourceRows: rows.length - 1,
       airportCount: Object.keys(airports).length,
       duplicateCodes: duplicateReports.length,
+      timezoneResolved,
+      timezoneUnresolved: Object.keys(airports).length - timezoneResolved,
+      timezoneMultiple: timezoneReports.length,
       ...rejected,
     }),
   };
@@ -281,7 +377,11 @@ export function validateAirportIndex(airports) {
  * Validate the richer lazy-search rows and, when supplied, prove that they are
  * a one-to-one companion to the compact coordinate index from the same CSV.
  */
-export function validateAirportSearchIndex(searchEntries, airports) {
+export function validateAirportSearchIndex(
+  searchEntries,
+  airports,
+  options = {},
+) {
   if (!Array.isArray(searchEntries) || searchEntries.length === 0) {
     throw new Error('Generated airport search index is empty.');
   }
@@ -296,11 +396,11 @@ export function validateAirportSearchIndex(searchEntries, airports) {
   let previousCode = '';
   for (let index = 0; index < searchEntries.length; index += 1) {
     const entry = searchEntries[index];
-    if (!Array.isArray(entry) || entry.length !== 4) {
+    if (!Array.isArray(entry) || (entry.length !== 4 && entry.length !== 5)) {
       throw new Error(`Invalid generated airport search tuple at row ${index}.`);
     }
 
-    const [code, name, municipality, isoCountry] = entry;
+    const [code, name, municipality, isoCountry, timezoneId] = entry;
     if (!IATA_PATTERN.test(code)) {
       throw new Error(`Invalid generated search IATA code: ${code}`);
     }
@@ -317,6 +417,12 @@ export function validateAirportSearchIndex(searchEntries, airports) {
     }
     if (typeof isoCountry !== 'string' || !/^[A-Z]{2}$/.test(isoCountry)) {
       throw new Error(`Invalid generated ISO country for ${code}: ${isoCountry}`);
+    }
+    if (options.requireTimezones && !timezoneId) {
+      throw new Error(`Generated timezone is missing for ${code}.`);
+    }
+    if (timezoneId !== undefined && !isValidIanaTimeZoneId(timezoneId)) {
+      throw new Error(`Invalid generated IANA timezone for ${code}: ${timezoneId}`);
     }
     if (coordinateCodes && coordinateCodes[index] !== code) {
       throw new Error(
@@ -359,7 +465,7 @@ export function formatGeneratedAirportSearchModule(
   searchEntries,
   selectedDataSha256,
 ) {
-  validateAirportSearchIndex(searchEntries);
+  validateAirportSearchIndex(searchEntries, undefined, { requireTimezones: true });
   const lines = searchEntries.map((entry) => `  ${JSON.stringify(entry)},`);
 
   return `/**
@@ -368,13 +474,20 @@ export function formatGeneratedAirportSearchModule(
  * Source: OurAirports airports.csv (Public Domain)
  * ${OURAIRPORTS_SOURCE_URL}
  * Fields retained for lazy airport search: IATA code, name, municipality,
- * ISO 3166-1 alpha-2 country code.
+ * ISO 3166-1 alpha-2 country code, and one build-time IANA timezone ID.
+ * Timezone lookup: geo-tz ${GEO_TZ_VERSION} (MIT), comprehensive product.
+ * Boundary data: timezone-boundary-builder ${TIMEZONE_BOUNDARY_BUILDER_RELEASE}
+ * output (ODbL), derived primarily from OpenStreetMap data.
+ * https://github.com/evansiroky/timezone-boundary-builder
  * Regenerate together with the coordinate index: npm run update-airports
  */
 import type { AirportSearchTuple } from '../../lib/airportSearch';
 
 export const OURAIRPORTS_SEARCH_DATA_URL = ${JSON.stringify(OURAIRPORTS_SOURCE_URL)};
 export const OURAIRPORTS_SEARCH_SHA256 = ${JSON.stringify(selectedDataSha256)};
+export const AIRPORT_TIMEZONE_RESOLVER = "geo-tz@${GEO_TZ_VERSION}/all";
+export const AIRPORT_TIMEZONE_BOUNDARY_RELEASE = "${TIMEZONE_BOUNDARY_BUILDER_RELEASE}";
+export const AIRPORT_TIMEZONE_BOUNDARY_LICENSE = "ODbL-1.0";
 export const GENERATED_AIRPORT_SEARCH_COUNT = ${searchEntries.length};
 
 export const GENERATED_AIRPORT_SEARCH_INDEX = [

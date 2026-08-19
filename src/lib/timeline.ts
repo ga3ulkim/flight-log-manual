@@ -1,4 +1,5 @@
 import type { Flight } from '../types';
+import { compareFlightsNewestFirst } from './flightOrdering';
 
 export interface FlightTimelineGroup {
   key: string;
@@ -14,15 +15,6 @@ export interface FlightTimelineDisclosure {
 
 const UNKNOWN_YEAR_KEY = 'unknown';
 
-function comparableDateKey(flight: Flight): string {
-  if (flight.y == null) return '';
-
-  const expectedPrefix = `${flight.y}.`;
-  return flight.sortKey.startsWith(expectedPrefix)
-    ? flight.sortKey
-    : `${flight.y}.00.00`;
-}
-
 /**
  * Prepare an already-filtered collection for archive browsing.
  *
@@ -33,15 +25,7 @@ function comparableDateKey(flight: Flight): string {
 export function groupFlightsForTimeline(
   flights: readonly Flight[],
 ): FlightTimelineGroup[] {
-  const ordered = flights.slice().sort((a, b) => {
-    if (a.y == null && b.y != null) return 1;
-    if (a.y != null && b.y == null) return -1;
-
-    const aDate = comparableDateKey(a);
-    const bDate = comparableDateKey(b);
-    if (aDate !== bDate) return aDate > bDate ? -1 : 1;
-    return b.id - a.id;
-  });
+  const ordered = flights.slice().sort(compareFlightsNewestFirst);
 
   const grouped = new Map<number | null, Flight[]>();
   ordered.forEach((flight) => {

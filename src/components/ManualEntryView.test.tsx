@@ -115,6 +115,18 @@ describe('manual entry view', () => {
     expect(markup).not.toContain('undefined');
   });
 
+  it('keeps the date-only time element valid when a departure time affects sorting', () => {
+    const timed = record(
+      'timed',
+      input('2024-08-31', 'ICN', 'PEK', { departureTime: '14:30' }),
+      '2024-08-31T01:00:00.000Z',
+    );
+    const markup = render([timed]);
+
+    expect(markup).toContain('dateTime="2024-08-31"');
+    expect(markup).not.toContain('dateTime="2024-08-31 14:30"');
+  });
+
   it('invokes one immediate, context-labelled delete action without confirmation UI', () => {
     const saved = record(
       'delete-me',

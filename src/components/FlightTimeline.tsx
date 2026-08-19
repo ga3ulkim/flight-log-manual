@@ -76,6 +76,17 @@ export default function FlightTimeline({
                               ) : (
                                 <span aria-label={date.accessible}>{date.primary}</span>
                               )}
+                              {flight.departureTime && (
+                                <time
+                                  className="flc-timeline-time"
+                                  dateTime={date.dateTime?.length === 10
+                                    ? `${date.dateTime}T${flight.departureTime}`
+                                    : flight.departureTime}
+                                  aria-label={`출발 공항 현지 시각 ${flight.departureTime}`}
+                                >
+                                  {flight.departureTime} <span aria-hidden="true">LOCAL</span>
+                                </time>
+                              )}
                             </div>
 
                             <div className="flc-timeline-flight">

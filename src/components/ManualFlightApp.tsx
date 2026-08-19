@@ -8,12 +8,11 @@ import {
 } from '../lib/manualBackup';
 import { manualCoordinateOverrides } from '../lib/manualCoordinates';
 import {
-  createManualFlight,
   manualFlightsToFlights,
   type ManualFlightInput,
   type ManualFlightRecord,
 } from '../lib/manualFlight';
-import { legacyFlightsToManualInputs } from '../lib/manualImport';
+import { legacyFlightsToManualRecords } from '../lib/manualImport';
 import {
   canEnterManualArchive,
   commitImmediateManualFlightDeletion,
@@ -208,13 +207,12 @@ export default function ManualFlightApp() {
 
   const importLegacy = async ({ flights }: LegacyFlightImportRequest) => {
     const catalog = await loadAirportSearchCatalog();
-    const converted = legacyFlightsToManualInputs(flights, catalog);
     const importStartedAt = Date.now();
-    const incoming = converted.inputs.map((input, index) => createManualFlight(input, {
+    const converted = legacyFlightsToManualRecords(flights, catalog, (index) => ({
       // Preserve the source row order for same-day timeline/playback tie breaks.
       now: () => new Date(importStartedAt + index),
     }));
-    const result = await repository.merge(incoming);
+    const result = await repository.merge(converted.records);
     const committedRecords = await reloadSessionArchive();
     setScreen((current) => manualAppScreenAfterMutation(current, committedRecords.length));
     setDemoMode(false);
