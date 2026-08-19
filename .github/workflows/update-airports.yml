@@ -1,0 +1,89 @@
+name: Refresh OurAirports index
+
+on:
+  schedule:
+    # 04:17 UTC on the first day of every month.
+    - cron: '17 4 1 * *'
+  workflow_dispatch:
+
+# The workflow updates one automation branch and opens a reviewable PR. It does
+# not write directly to main or deploy; merging the PR triggers deploy.yml.
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: monthly-airport-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Regenerate airport coordinate and search indexes
+        run: npm run update-airports
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build production site
+        run: npm run build
+
+      - name: Check for airport data changes
+        id: changes
+        shell: bash
+        run: |
+          if git diff --quiet -- src/data/generated/ourAirports.ts src/data/generated/airportSearch.ts; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "OurAirports coordinates and search metadata are unchanged."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "OurAirports coordinates or search metadata changed."
+          fi
+
+      - name: Open or refresh airport-data pull request
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="automation/monthly-ourairports"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$branch:refs/remotes/origin/$branch" || true
+          git checkout -B "$branch"
+          git add src/data/generated/ourAirports.ts src/data/generated/airportSearch.ts
+          git commit -m "Update OurAirports airport indexes"
+          git push --force-with-lease origin "HEAD:refs/heads/$branch"
+
+          existing_pr="$(gh pr list --state open --head "$branch" --json number --jq '.[0].number // empty')"
+          if [ -z "$existing_pr" ]; then
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "Update OurAirports airport indexes" \
+              --body "Monthly refresh of the public-domain OurAirports coordinate and local autocomplete snapshots. The updater, tests, lint, typecheck, and production build passed in GitHub Actions. Merging this PR triggers the normal Pages deployment workflow."
+          else
+            echo "Updated existing pull request #$existing_pr."
+          fi

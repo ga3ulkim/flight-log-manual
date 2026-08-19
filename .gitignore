@@ -1,0 +1,40 @@
+# Personal flight data (local-only; never commit or bundle)
+/*.[cC][sS][vV]
+/*.[xX][lL][sS]
+/*.[xX][lL][sS][xX]
+/flight-log-chart.jsx
+/flight-log-chart.html
+/flight-log-backup-*.json
+
+# Dependencies and build output
+/node_modules/
+/dist/
+/.vite/
+/coverage/
+
+# Local tooling/runtime used only in this workspace
+/.tools/
+
+# Internal architecture and phase reports (keep locally; never publish)
+/MIGRATION_NOTES.md
+/FINAL_REPORT.md
+/PHASE*_REPORT.md
+/MANUAL_V1_REPORT.md
+
+# Environment and machine-local files
+.env
+.env.*
+!.env.example
+.npmrc
+*.key
+*.p12
+*.pfx
+*.pem
+*.local
+desktop.ini
+.DS_Store
+npm-debug.log*
+debug.log
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
