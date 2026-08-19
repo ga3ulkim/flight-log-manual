@@ -90,6 +90,8 @@ function focusableElements(container: HTMLElement): HTMLElement[] {
 function restoreFocus(previouslyFocused: HTMLElement | null): void {
   if (
     previouslyFocused?.isConnected
+    && previouslyFocused !== document.body
+    && previouslyFocused !== document.documentElement
     && !previouslyFocused.matches(':disabled')
     && !previouslyFocused.closest('[inert], [aria-hidden="true"]')
   ) {

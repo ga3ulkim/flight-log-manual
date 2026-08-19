@@ -14,6 +14,12 @@ import {
   type ManualFlightRecord,
 } from '../lib/manualFlight';
 import { legacyFlightsToManualInputs } from '../lib/manualImport';
+import {
+  canEnterManualArchive,
+  initialManualAppScreen,
+  manualAppScreenAfterMutation,
+  type ManualAppScreen,
+} from '../lib/manualEntryFlow';
 import { setRuntimeAirportCoordinates } from '../lib/geography';
 import {
   createIndexedDbManualFlightRepository,
@@ -29,6 +35,7 @@ import {
   type ManualFlightSubmitContext,
 } from './manual';
 import FlightLogChart from './FlightLogChart';
+import ManualEntryView from './ManualEntryView';
 
 type StorageStatus = 'loading' | 'ready' | 'error';
 type EditorState = ManualFlightRecord | null | undefined;
@@ -53,6 +60,10 @@ function storagePersistenceRequest(): void {
   void persist.call(navigator.storage).catch(() => undefined);
 }
 
+function focusAfterRender(id: string): void {
+  window.setTimeout(() => document.getElementById(id)?.focus({ preventScroll: true }), 0);
+}
+
 export default function ManualFlightApp() {
   const repositoryRef = useRef<ManualFlightRepositoryService | null>(null);
   if (!repositoryRef.current) {
@@ -69,6 +80,7 @@ export default function ManualFlightApp() {
   const [dataManagementOpen, setDataManagementOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ManualFlightRecord | null>(null);
   const [notice, setNotice] = useState('');
+  const [screen, setScreen] = useState<ManualAppScreen>('entry');
   const recordsRef = useRef<ManualFlightRecord[]>([]);
 
   const applyRecords = useCallback((nextRecords: ManualFlightRecord[]) => {
@@ -102,7 +114,8 @@ export default function ManualFlightApp() {
     setStorageStatus('loading');
     setStorageError('');
     try {
-      await reloadArchive();
+      const nextRecords = await reloadArchive();
+      setScreen(initialManualAppScreen(nextRecords.length));
       setStorageStatus('ready');
     } catch (error) {
       setRuntimeAirportCoordinates({});
@@ -134,6 +147,10 @@ export default function ManualFlightApp() {
     };
   }, [demoMode, reloadArchive, storageStatus]);
 
+  useEffect(() => {
+    if (!demoMode && records.length === 0) setScreen('entry');
+  }, [demoMode, records.length]);
+
   const visibleFlights = useMemo(
     () => demoMode ? SYNTHETIC_FLIGHTS : manualFlightsToFlights(records),
     [demoMode, records],
@@ -141,14 +158,30 @@ export default function ManualFlightApp() {
 
   const enterDemo = () => {
     setRuntimeAirportCoordinates({});
+    setScreen('archive');
     setDemoMode(true);
     setNotice('합성 샘플은 임시 화면이며 개인 기록에 저장되지 않습니다.');
   };
 
   const exitDemo = () => {
     setRuntimeAirportCoordinates(manualCoordinateOverrides(records));
+    setScreen(initialManualAppScreen(records.length));
     setDemoMode(false);
     setNotice('');
+  };
+
+  const openRecordManagement = () => {
+    setRuntimeAirportCoordinates(manualCoordinateOverrides(records));
+    setDemoMode(false);
+    setScreen('entry');
+    setNotice('');
+    focusAfterRender('manual-entry-title');
+  };
+
+  const openArchive = () => {
+    if (!canEnterManualArchive(records.length)) return;
+    setScreen('archive');
+    focusAfterRender('flight-log-title');
   };
 
   const openEdit = (manualId: string) => {
@@ -180,6 +213,7 @@ export default function ManualFlightApp() {
         if (firstRecord) storagePersistenceRequest();
       }
       const verified = await reconcileAfterWrite(committedRecords);
+      setScreen((current) => manualAppScreenAfterMutation(current, committedRecords.length));
       setDemoMode(false);
       setEditor(undefined);
       if (verified) {
@@ -193,9 +227,9 @@ export default function ManualFlightApp() {
   const deleteFlight = async () => {
     if (!deleteTarget) return;
     await repository.delete(deleteTarget.id);
-    const verified = await reconcileAfterWrite(
-      records.filter((record) => record.id !== deleteTarget.id),
-    );
+    const committedRecords = records.filter((record) => record.id !== deleteTarget.id);
+    const verified = await reconcileAfterWrite(committedRecords);
+    setScreen((current) => manualAppScreenAfterMutation(current, committedRecords.length));
     setDeleteTarget(null);
     if (verified) setNotice('비행 기록을 삭제했습니다.');
   };
@@ -209,6 +243,7 @@ export default function ManualFlightApp() {
       ? sortManualFlightRecords(backup.flights)
       : mergeManualFlightRecords(records, backup.flights);
     const verified = await reconcileAfterWrite(committedRecords);
+    setScreen((current) => manualAppScreenAfterMutation(current, committedRecords.length));
     setDemoMode(false);
     if (verified) {
       setNotice(mode === 'replace' ? 'JSON 백업으로 기록을 교체했습니다.' : 'JSON 백업을 병합했습니다.');
@@ -225,7 +260,9 @@ export default function ManualFlightApp() {
       now: () => new Date(importStartedAt + index),
     }));
     const result = await repository.merge(incoming);
-    const verified = await reconcileAfterWrite(mergeManualFlightRecords(records, incoming));
+    const committedRecords = mergeManualFlightRecords(records, incoming);
+    const verified = await reconcileAfterWrite(committedRecords);
+    setScreen((current) => manualAppScreenAfterMutation(current, committedRecords.length));
     setDemoMode(false);
     if (verified) {
       setNotice(`${result.added.toLocaleString()}개의 기존 기록을 가져왔습니다.`);
@@ -240,6 +277,7 @@ export default function ManualFlightApp() {
   const clearAll = async () => {
     await repository.clear();
     applyRecords([]);
+    setScreen('entry');
     setDemoMode(false);
     setNotice('이 브라우저의 모든 비행 기록을 삭제했습니다.');
   };
@@ -271,60 +309,26 @@ export default function ManualFlightApp() {
     );
   }
 
-  const showFirstRun = records.length === 0 && !demoMode;
+  const showEntry = !demoMode && (screen === 'entry' || records.length === 0);
   return (
     <>
-      {showFirstRun ? (
-        <main className="flc-app flc-landing">
-          <div className="flc-landing-shell">
-            <section className="flc-landing-copy" aria-labelledby="landing-title">
-              <div className="flc-eyebrow">PERSONAL FLIGHT LOG</div>
-              <h1 className="flc-landing-title" id="landing-title">
-                <span className="flc-landing-title-line">나의 비행</span>{' '}
-                <span className="flc-landing-title-line">아카이브</span>
-              </h1>
-              <p className="flc-landing-statement">
-                한 편씩 기록하고,
-                <br />
-                지도와 시간 속에서 다시 봅니다.
-              </p>
-              <p className="flc-landing-english">Your journeys, saved in this browser.</p>
-              <div className="flc-privacy-seal">
-                <span className="flc-privacy-seal-mark" aria-hidden="true">LOCAL<br />LOG</span>
-                <span>
-                  <strong>PRIVATE BY DESIGN</strong>
-                  비행 기록은 이 브라우저에 저장되며 서버나 계정으로 전송되지 않습니다.
-                </span>
-              </div>
-            </section>
-
-            <section className="flc-first-run-panel" aria-labelledby="first-run-heading">
-              <div className="flc-eyebrow">YOUR ARCHIVE STARTS HERE</div>
-              <h2 id="first-run-heading">아직 기록된 비행이 없습니다</h2>
-              <p>첫 비행부터 직접 기록해 보세요. 공항을 선택하면 도시와 국가, 좌표는 자동으로 채워집니다.</p>
-              <div className="flc-first-run-actions">
-                <button className="flc-btn flc-btn-primary" type="button" onClick={() => setEditor(null)}>
-                  + 첫 비행 기록 추가
-                </button>
-                <button className="flc-btn" type="button" onClick={enterDemo}>
-                  합성 샘플로 둘러보기
-                </button>
-                <button className="flc-btn" type="button" onClick={() => setDataManagementOpen(true)}>
-                  데이터 관리
-                </button>
-              </div>
-              <p className="flc-first-run-note">
-                IndexedDB는 브라우저·기기별 저장소입니다. 사이트 데이터를 지우면 기록도 사라질 수 있으므로 데이터 관리에서 JSON 백업을 정기적으로 보관하세요.
-              </p>
-            </section>
-          </div>
-        </main>
+      {showEntry ? (
+        <ManualEntryView
+          records={records}
+          onAddFlight={() => setEditor(null)}
+          onEditFlight={openEdit}
+          onDeleteFlight={requestDelete}
+          onOpenArchive={openArchive}
+          onOpenDataManagement={() => setDataManagementOpen(true)}
+          onOpenDemo={enterDemo}
+        />
       ) : (
         <FlightLogChart
           flights={visibleFlights}
           sourceLabel={demoMode ? 'TEMPORARY DEMO · 합성 샘플' : 'LOCAL ARCHIVE · 이 브라우저'}
           demoMode={demoMode}
           onAddFlight={() => setEditor(null)}
+          onOpenRecordManagement={openRecordManagement}
           onOpenDataManagement={() => setDataManagementOpen(true)}
           onEditFlight={openEdit}
           onDeleteFlight={requestDelete}

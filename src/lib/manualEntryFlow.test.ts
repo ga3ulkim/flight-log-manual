@@ -1,0 +1,78 @@
+import { describe, expect, it } from 'vitest';
+import { createManualFlight } from './manualFlight';
+import type { ManualFlightInput, ManualFlightRecord } from './manualFlight';
+import {
+  canEnterManualArchive,
+  initialManualAppScreen,
+  manualAppScreenAfterMutation,
+  manualEntryFlights,
+} from './manualEntryFlow';
+
+function input(date: string, from: string, to: string): ManualFlightInput {
+  return {
+    date,
+    departure: {
+      iata: from,
+      name: `${from} Airport`,
+      municipality: `${from} City`,
+      countryCode: 'KR',
+      countryName: '대한민국',
+      latitude: 37,
+      longitude: 127,
+    },
+    arrival: {
+      iata: to,
+      name: `${to} Airport`,
+      municipality: `${to} City`,
+      countryCode: 'JP',
+      countryName: '일본',
+      latitude: 35,
+      longitude: 139,
+    },
+  };
+}
+
+function record(id: string, date: string, timestamp: string): ManualFlightRecord {
+  return createManualFlight(input(date, id === 'older' ? 'ICN' : 'NRT', id === 'older' ? 'NRT' : 'ICN'), {
+    generateId: () => id,
+    now: () => new Date(timestamp),
+  });
+}
+
+describe('manual entry navigation policy', () => {
+  it('opens setup for an empty archive and the dashboard for a returning archive', () => {
+    expect(initialManualAppScreen(0)).toBe('entry');
+    expect(initialManualAppScreen(1)).toBe('archive');
+    expect(initialManualAppScreen(10)).toBe('archive');
+  });
+
+  it('never auto-navigates after consecutive entry-view mutations', () => {
+    let screen = initialManualAppScreen(0);
+    for (const count of [1, 2, 10, 10, 9]) {
+      screen = manualAppScreenAfterMutation(screen, count);
+      expect(screen).toBe('entry');
+    }
+  });
+
+  it('keeps archive mutations in the archive unless the last record is removed', () => {
+    expect(manualAppScreenAfterMutation('archive', 3)).toBe('archive');
+    expect(manualAppScreenAfterMutation('archive', 0)).toBe('entry');
+  });
+
+  it('does not allow the empty dashboard transition', () => {
+    expect(canEnterManualArchive(0)).toBe(false);
+    expect(canEnterManualArchive(1)).toBe(true);
+  });
+
+  it('uses the same saved records and newest-first Timeline ordering', () => {
+    const records = [
+      record('older', '2024-08-20', '2024-08-20T01:00:00.000Z'),
+      record('newer', '2024-08-31', '2024-08-31T01:00:00.000Z'),
+    ];
+    const flights = manualEntryFlights(records);
+    expect(flights.map((flight) => flight.manualId)).toEqual(['newer', 'older']);
+    expect(new Set(flights.map((flight) => flight.manualId))).toEqual(
+      new Set(records.map((saved) => saved.id)),
+    );
+  });
+});

@@ -95,6 +95,7 @@ interface FlightLogChartProps {
   sourceLabel: string;
   demoMode?: boolean;
   onAddFlight: () => void;
+  onOpenRecordManagement: () => void;
   onOpenDataManagement: () => void;
   onEditFlight?: (manualId: string) => void;
   onDeleteFlight?: (manualId: string) => void;
@@ -107,6 +108,7 @@ export default function FlightLogChart({
   sourceLabel,
   demoMode = false,
   onAddFlight,
+  onOpenRecordManagement,
   onOpenDataManagement,
   onEditFlight,
   onDeleteFlight,
@@ -503,6 +505,9 @@ export default function FlightLogChart({
               <button className="flc-btn flc-btn-primary" type="button" onClick={onAddFlight}>
                 + 비행 추가
               </button>
+              <button className="flc-btn" type="button" onClick={onOpenRecordManagement}>
+                기록 관리
+              </button>
               <button className="flc-btn" type="button" onClick={onOpenDataManagement}>
                 데이터 관리
               </button>
@@ -511,7 +516,7 @@ export default function FlightLogChart({
 
           <div className="flc-header-identity">
             <div>
-              <h1 className="flc-header-title">나의 비행 기록</h1>
+              <h1 className="flc-header-title" id="flight-log-title" tabIndex={-1}>나의 비행 기록</h1>
               <p className="flc-source-name">{sourceLabel}</p>
             </div>
             <div className="flc-year-range" aria-label={`기록 기간 ${archiveRange}`}>

@@ -14,12 +14,14 @@
 
 # Local tooling/runtime used only in this workspace
 /.tools/
+/.tmp/
 
 # Internal architecture and phase reports (keep locally; never publish)
 /MIGRATION_NOTES.md
 /FINAL_REPORT.md
 /PHASE*_REPORT.md
 /MANUAL_V1_REPORT.md
+/MANUAL_V1_1_REPORT.md
 
 # Environment and machine-local files
 .env
