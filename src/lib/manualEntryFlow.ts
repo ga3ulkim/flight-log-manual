@@ -5,9 +5,9 @@ import { groupFlightsForTimeline } from './timeline';
 
 export type ManualAppScreen = 'entry' | 'archive';
 
-/** Fresh archives enter setup; returning archives open the existing dashboard. */
-export function initialManualAppScreen(savedRecordCount: number): ManualAppScreen {
-  return savedRecordCount > 0 ? 'archive' : 'entry';
+/** Every application load begins in the record-management hub. */
+export function initialManualAppScreen(): ManualAppScreen {
+  return 'entry';
 }
 
 /** Mutations never auto-enter the archive, while an empty archive returns to setup. */
@@ -20,6 +20,33 @@ export function manualAppScreenAfterMutation(
 
 export function canEnterManualArchive(savedRecordCount: number): boolean {
   return savedRecordCount > 0;
+}
+
+export function manualAppScreenAfterArchiveRequest(
+  savedRecordCount: number,
+): ManualAppScreen {
+  return canEnterManualArchive(savedRecordCount) ? 'archive' : 'entry';
+}
+
+export function manualAppScreenAfterManagementRequest(): ManualAppScreen {
+  return 'entry';
+}
+
+export function manualEntryEditControlId(manualId: string): string {
+  return `manual-entry-edit-${encodeURIComponent(manualId)}`;
+}
+
+/**
+ * Commit one deletion before deriving a new visible record list. A rejected
+ * repository transaction leaves the caller's authoritative list untouched.
+ */
+export async function commitImmediateManualFlightDeletion(
+  deleteRecord: (manualId: string) => Promise<boolean>,
+  records: readonly ManualFlightRecord[],
+  manualId: string,
+): Promise<ManualFlightRecord[]> {
+  await deleteRecord(manualId);
+  return records.filter((record) => record.id !== manualId);
 }
 
 /** Use the archive Timeline's established newest-first date and same-day ordering. */

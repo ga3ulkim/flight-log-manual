@@ -1,10 +1,25 @@
+import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createManualFlight } from '../lib/manualFlight';
 import type { ManualFlightInput, ManualFlightRecord } from '../lib/manualFlight';
 import ManualEntryView from './ManualEntryView';
 
 const noop = () => undefined;
+
+type InteractiveElement = ReactElement<{
+  children?: ReactNode;
+  onClick?: () => void;
+  'aria-label'?: string;
+}>;
+
+function findButtons(node: ReactNode): InteractiveElement[] {
+  if (!isValidElement(node)) return [];
+  const element = node as InteractiveElement;
+  const descendants = Children.toArray(element.props.children)
+    .flatMap((child) => findButtons(child));
+  return element.type === 'button' ? [element, ...descendants] : descendants;
+}
 
 function input(
   date: string,
@@ -96,5 +111,30 @@ describe('manual entry view', () => {
     expect(markup).toContain('삭제');
     expect(markup).toContain('내 비행 기록 보기');
     expect(markup).not.toContain('undefined');
+  });
+
+  it('invokes one immediate, context-labelled delete action without confirmation UI', () => {
+    const saved = record(
+      'delete-me',
+      input('2024-08-20', 'ICN', 'PEK'),
+      '2024-08-20T01:00:00.000Z',
+    );
+    const onDeleteFlight = vi.fn();
+    const tree = ManualEntryView({
+      records: [saved],
+      onAddFlight: noop,
+      onEditFlight: noop,
+      onDeleteFlight,
+      onOpenArchive: noop,
+      onOpenDataManagement: noop,
+      onOpenDemo: noop,
+    });
+    const deleteButton = findButtons(tree).find((button) => button.props.children === '삭제');
+
+    expect(deleteButton?.props['aria-label']).toContain('ICN에서 PEK 비행 기록 삭제');
+    expect(renderToStaticMarkup(tree)).not.toContain('이 비행 기록을 삭제할까요?');
+    deleteButton?.props.onClick?.();
+    expect(onDeleteFlight).toHaveBeenCalledTimes(1);
+    expect(onDeleteFlight).toHaveBeenCalledWith(saved.id);
   });
 });

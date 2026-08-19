@@ -16,7 +16,12 @@ import {
 import { legacyFlightsToManualInputs } from '../lib/manualImport';
 import {
   canEnterManualArchive,
+  commitImmediateManualFlightDeletion,
   initialManualAppScreen,
+  manualAppScreenAfterArchiveRequest,
+  manualAppScreenAfterManagementRequest,
+  manualEntryEditControlId,
+  manualEntryFlights,
   manualAppScreenAfterMutation,
   type ManualAppScreen,
 } from '../lib/manualEntryFlow';
@@ -28,7 +33,6 @@ import {
   type ManualFlightRepositoryService,
 } from '../storage/manualFlightRepository';
 import {
-  ConfirmDialog,
   DataManagementDialog,
   FlightEditorDialog,
   type LegacyFlightImportRequest,
@@ -78,7 +82,6 @@ export default function ManualFlightApp() {
   const [editor, setEditor] = useState<EditorState>(undefined);
   const [editorSubmitting, setEditorSubmitting] = useState(false);
   const [dataManagementOpen, setDataManagementOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<ManualFlightRecord | null>(null);
   const [notice, setNotice] = useState('');
   const [screen, setScreen] = useState<ManualAppScreen>('entry');
   const recordsRef = useRef<ManualFlightRecord[]>([]);
@@ -114,8 +117,8 @@ export default function ManualFlightApp() {
     setStorageStatus('loading');
     setStorageError('');
     try {
-      const nextRecords = await reloadArchive();
-      setScreen(initialManualAppScreen(nextRecords.length));
+      await reloadArchive();
+      setScreen(initialManualAppScreen());
       setStorageStatus('ready');
     } catch (error) {
       setRuntimeAirportCoordinates({});
@@ -165,7 +168,7 @@ export default function ManualFlightApp() {
 
   const exitDemo = () => {
     setRuntimeAirportCoordinates(manualCoordinateOverrides(records));
-    setScreen(initialManualAppScreen(records.length));
+    setScreen(initialManualAppScreen());
     setDemoMode(false);
     setNotice('');
   };
@@ -173,25 +176,20 @@ export default function ManualFlightApp() {
   const openRecordManagement = () => {
     setRuntimeAirportCoordinates(manualCoordinateOverrides(records));
     setDemoMode(false);
-    setScreen('entry');
+    setScreen(manualAppScreenAfterManagementRequest());
     setNotice('');
     focusAfterRender('manual-entry-title');
   };
 
   const openArchive = () => {
     if (!canEnterManualArchive(records.length)) return;
-    setScreen('archive');
+    setScreen(manualAppScreenAfterArchiveRequest(records.length));
     focusAfterRender('flight-log-title');
   };
 
   const openEdit = (manualId: string) => {
     const record = records.find((item) => item.id === manualId);
     if (record) setEditor(record);
-  };
-
-  const requestDelete = (manualId: string) => {
-    const record = records.find((item) => item.id === manualId);
-    if (record) setDeleteTarget(record);
   };
 
   const saveFlight = async (
@@ -224,14 +222,40 @@ export default function ManualFlightApp() {
     }
   };
 
-  const deleteFlight = async () => {
-    if (!deleteTarget) return;
-    await repository.delete(deleteTarget.id);
-    const committedRecords = records.filter((record) => record.id !== deleteTarget.id);
-    const verified = await reconcileAfterWrite(committedRecords);
-    setScreen((current) => manualAppScreenAfterMutation(current, committedRecords.length));
-    setDeleteTarget(null);
-    if (verified) setNotice('비행 기록을 삭제했습니다.');
+  const deleteFlight = async (manualId: string) => {
+    const orderedIds = manualEntryFlights(records)
+      .map((flight) => flight.manualId)
+      .filter((id): id is string => Boolean(id));
+    const deletedIndex = orderedIds.indexOf(manualId);
+    const nearbyId = orderedIds[deletedIndex + 1] ?? orderedIds[deletedIndex - 1];
+    const deletionOrigin = screen;
+
+    try {
+      const committedRecords = await commitImmediateManualFlightDeletion(
+        (id) => repository.delete(id),
+        records,
+        manualId,
+      );
+      const verified = await reconcileAfterWrite(committedRecords);
+      setScreen((current) => manualAppScreenAfterMutation(current, committedRecords.length));
+      if (verified) setNotice('비행 기록을 삭제했습니다.');
+
+      if (deletionOrigin === 'entry') {
+        focusAfterRender(
+          nearbyId && committedRecords.some((record) => record.id === nearbyId)
+            ? manualEntryEditControlId(nearbyId)
+            : 'manual-entry-add',
+        );
+      } else {
+        focusAfterRender(committedRecords.length > 0 ? 'flight-log-title' : 'manual-entry-add');
+      }
+    } catch (error) {
+      setNotice(`비행 기록을 삭제하지 못했습니다. ${readableError(error)}`);
+    }
+  };
+
+  const requestDelete = (manualId: string) => {
+    void deleteFlight(manualId);
   };
 
   const restoreBackup = async (
@@ -361,17 +385,6 @@ export default function ManualFlightApp() {
         onClearAll={clearAll}
       />
 
-      <ConfirmDialog
-        open={deleteTarget != null}
-        title="이 비행 기록을 삭제할까요?"
-        description={deleteTarget
-          ? `${deleteTarget.date.replace(/-/g, '.')} · ${deleteTarget.departure.iata} → ${deleteTarget.arrival.iata}`
-          : ''}
-        confirmLabel="비행 기록 삭제"
-        tone="danger"
-        onConfirm={deleteFlight}
-        onCancel={() => setDeleteTarget(null)}
-      />
     </>
   );
 }

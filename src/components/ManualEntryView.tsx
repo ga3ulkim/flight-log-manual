@@ -1,6 +1,7 @@
 import type { ManualFlightRecord } from '../lib/manualFlight';
 import {
   canEnterManualArchive,
+  manualEntryEditControlId,
   manualEntryFlights,
 } from '../lib/manualEntryFlow';
 
@@ -42,7 +43,12 @@ export default function ManualEntryView({
             저장한 기록은 이 브라우저에 바로 남습니다.
           </p>
           <div className="flc-entry-primary-action">
-            <button className="flc-btn flc-btn-primary" type="button" onClick={onAddFlight}>
+            <button
+              id="manual-entry-add"
+              className="flc-btn flc-btn-primary"
+              type="button"
+              onClick={onAddFlight}
+            >
               {addLabel}
             </button>
           </div>
@@ -75,12 +81,18 @@ export default function ManualEntryView({
                     </article>
                     {flight.manualId && (
                       <div className="flc-entry-flight-actions" aria-label={`${flight.fa}에서 ${flight.ta} 비행 기록 작업`}>
-                        <button className="flc-btn" type="button" onClick={() => onEditFlight(flight.manualId!)}>
+                        <button
+                          id={manualEntryEditControlId(flight.manualId)}
+                          className="flc-btn"
+                          type="button"
+                          onClick={() => onEditFlight(flight.manualId!)}
+                        >
                           수정
                         </button>
                         <button
                           className="flc-btn flc-btn-danger-quiet"
                           type="button"
+                          aria-label={`${flight.d} ${flight.fa}에서 ${flight.ta} 비행 기록 삭제`}
                           onClick={() => onDeleteFlight(flight.manualId!)}
                         >
                           삭제
