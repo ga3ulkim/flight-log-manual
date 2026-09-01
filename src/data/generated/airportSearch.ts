@@ -14,11 +14,11 @@
 import type { AirportSearchTuple } from '../../lib/airportSearch';
 
 export const OURAIRPORTS_SEARCH_DATA_URL = "https://davidmegginson.github.io/ourairports-data/airports.csv";
-export const OURAIRPORTS_SEARCH_SHA256 = "c38b8d5613df146945694050c9fabfbdc6d550871344c2d12d27006938d85ba4";
+export const OURAIRPORTS_SEARCH_SHA256 = "63c9b87ae2ecd009d3657ec73f7aaef108743ebc28b2cfcc9b18ee4a0c6dc05f";
 export const AIRPORT_TIMEZONE_RESOLVER = "geo-tz@8.1.8/all";
 export const AIRPORT_TIMEZONE_BOUNDARY_RELEASE = "2026c";
 export const AIRPORT_TIMEZONE_BOUNDARY_LICENSE = "ODbL-1.0";
-export const GENERATED_AIRPORT_SEARCH_COUNT = 9052;
+export const GENERATED_AIRPORT_SEARCH_COUNT = 9057;
 
 export const GENERATED_AIRPORT_SEARCH_INDEX = [
   ["AAA","Anaa Airport","Anaa","PF","Pacific/Tahiti"],
@@ -1801,7 +1801,6 @@ export const GENERATED_AIRPORT_SEARCH_INDEX = [
   ["DHG","Dalnegorsk Airport","Dalnegorsk","RU","Asia/Vladivostok"],
   ["DHH","Barkol Dahe Airport","Barkol","CN","Asia/Shanghai"],
   ["DHI","Dhangarhi Airport","Dhangarhi","NP","Asia/Kathmandu"],
-  ["DHL","Ad-Dali Airport","Ad-Dali","YE","Asia/Aden"],
   ["DHM","Kangra Airport","Kangra","IN","Asia/Kolkata"],
   ["DHN","Dothan Regional Airport","Dothan","US","America/Chicago"],
   ["DHR","De Kooy Airfield / Den Helder Naval Air Station","Den Helder","NL","Europe/Amsterdam"],
@@ -2607,7 +2606,7 @@ export const GENERATED_AIRPORT_SEARCH_INDEX = [
   ["GIC","Boigu Island Airport","Boigu Island","AU","Australia/Brisbane"],
   ["GID","Gitega Airport","Gitega","BI","Africa/Bujumbura"],
   ["GIF","Winter Haven Regional Airport - Gilbert Field","Winter Haven","US","America/New_York"],
-  ["GIG","Rio Galeão – Tom Jobim International Airport","Rio De Janeiro","BR","America/Sao_Paulo"],
+  ["GIG","Rio de Janeiro Galeão – Tom Jobim International Airport","Rio De Janeiro","BR","America/Sao_Paulo"],
   ["GII","Siguiri Airport","Siguiri","GN","Africa/Conakry"],
   ["GIL","Gilgit Airport","Gilgit","PK","Asia/Karachi"],
   ["GIM","Miele Mimbale Airport","Miele Mimbale","GA","Africa/Libreville"],
@@ -2726,7 +2725,7 @@ export const GENERATED_AIRPORT_SEARCH_INDEX = [
   ["GRC","Grand Cess Airport","Grand Cess","LR","Africa/Monrovia"],
   ["GRD","Greenwood County Airport","Greenwood","US","America/New_York"],
   ["GRE","Greenville Airport","Greenville","US","America/Chicago"],
-  ["GRF","Gray Army Air Field","Fort Lewis/Tacoma","US","America/Los_Angeles"],
+  ["GRF","Gray Army Air Field","Joint Base Lewis McChord","US","America/Los_Angeles"],
   ["GRG","Gardez Airport","Gardez","AF","Asia/Kabul"],
   ["GRI","Central Nebraska Regional Airport","Grand Island","US","America/Chicago"],
   ["GRJ","George Airport","George","ZA","Africa/Johannesburg"],
@@ -2809,12 +2808,13 @@ export const GENERATED_AIRPORT_SEARCH_INDEX = [
   ["GVP","Greenvale Airport","","AU","Australia/Brisbane"],
   ["GVR","Coronel Altino Machado Airport","Governador Valadares","BR","America/Sao_Paulo"],
   ["GVT","Majors Airport","Greenville","US","America/Chicago"],
+  ["GVX","Gävle–Sandviken Airport","Sandviken","SE","Europe/Stockholm"],
   ["GWA","Gwa Airport","Gwa","MM","Asia/Yangon"],
   ["GWD","New Gwadar International Airport","Gurandani","PK","Asia/Karachi"],
   ["GWE","Josiah Tungamirai Air Force Base","Gweru","ZW","Africa/Harare"],
   ["GWL","Gwalior Airport","Gwalior","IN","Asia/Kolkata"],
   ["GWO","Greenwood–Leflore Airport","Greenwood","US","America/Chicago"],
-  ["GWS","Glenwood Springs Municipal Airport","Glenwood Springs","US","America/Denver"],
+  ["GWS","Sumers Airpark","Glenwood Springs","US","America/Denver"],
   ["GWT","Westerland Sylt Airport","Sylt","DE","Europe/Berlin"],
   ["GWV","Glendale Fokker Field","Glendale","US","America/New_York"],
   ["GXF","Seiyun Hadhramaut International Airport","Seiyun","YE","Asia/Aden"],
@@ -3217,6 +3217,7 @@ export const GENERATED_AIRPORT_SEARCH_INDEX = [
   ["IEG","Zielona Góra-Babimost Airport","Nowe Kramsko","PL","Europe/Warsaw"],
   ["IEJ","Iejima Airport","Ie","JP","Asia/Tokyo"],
   ["IES","Riesa-Göhlis Airport","Riesa","DE","Europe/Berlin"],
+  ["IEV","Igor Sikorsky Kyiv International Airport (Zhuliany)","Kyiv","UA","Europe/Kyiv"],
   ["IFA","Iowa Falls Municipal Airport","Iowa Falls","US","America/Chicago"],
   ["IFF","Iffley Airport","","AU","Australia/Brisbane"],
   ["IFH","Hesa Airport","Hesa","IR","Asia/Tehran"],
@@ -4062,6 +4063,7 @@ export const GENERATED_AIRPORT_SEARCH_INDEX = [
   ["KTW","Katowice Wojciech Korfanty International Airport","Katowice","PL","Europe/Warsaw"],
   ["KTY","Katukurunda Air Force Base","Kalutara","LK","Asia/Colombo"],
   ["KUA","Kuantan Airport","Kuantan","MY","Asia/Kuala_Lumpur"],
+  ["KUB","Anduki Airport","Seria","BN","Asia/Brunei"],
   ["KUC","Kuria Airport","Kuria","KI","Pacific/Tarawa"],
   ["KUD","Kudat Airport","Kudat","MY","Asia/Kuching"],
   ["KUE","Kukudu Airport","Kolombangara Island","SB","Pacific/Guadalcanal"],
@@ -5009,7 +5011,7 @@ export const GENERATED_AIRPORT_SEARCH_INDEX = [
   ["MQQ","Moundou Airport","Moundou","TD","Africa/Ndjamena"],
   ["MQR","Mosquera Airport","Mosquera","CO","America/Bogota"],
   ["MQS","Mustique Airport","Lovell","VC","America/St_Vincent"],
-  ["MQT","Marquette/Sawyer International Airport","Gwinn","US","America/Detroit"],
+  ["MQT","Marquette Sawyer Regional Airport","Gwinn","US","America/Detroit"],
   ["MQU","Mariquita Airport","Mariquita","CO","America/Bogota"],
   ["MQV","Mostaganem Airport","Sayada","DZ","Africa/Algiers"],
   ["MQW","Telfair Wheeler Airport","Mc Rae","US","America/New_York"],
@@ -5391,6 +5393,7 @@ export const GENERATED_AIRPORT_SEARCH_INDEX = [
   ["NLS","Nicholson Airport","","AU","Australia/Perth"],
   ["NLT","Xinyuan Nalati Airport","Xinyuan","CN","Asia/Shanghai"],
   ["NLU","Felipe Ángeles International Airport","Mexico City","MX","America/Mexico_City"],
+  ["NLV","Mykolaiv International Airport [CLOSED]","Mykolaiv","UA","Europe/Kyiv"],
   ["NMA","Namangan International Airport","Namangan","UZ","Asia/Tashkent"],
   ["NMB","Daman Airport","Daman","IN","Asia/Kolkata"],
   ["NMC","Normans Cay Airport","Normans Cay","BS","America/Nassau"],
@@ -7726,6 +7729,7 @@ export const GENERATED_AIRPORT_SEARCH_INDEX = [
   ["TTM","Tablón De Tamara Airport","Tablón De Tamara","CO","America/Bogota"],
   ["TTN","Trenton Mercer Airport","Ewing Township","US","America/New_York"],
   ["TTO","Britton Municipal Airport","Britton","US","America/Chicago"],
+  ["TTQ","Tortuguero Airport","Tortuguero","CR","America/Costa_Rica"],
   ["TTR","Pongtiku Airport","Makale","ID","Asia/Makassar"],
   ["TTS","Tsaratanana Airport","Tsaratanana","MG","Indian/Antananarivo"],
   ["TTT","Taitung Airport","Taitung City","TW","Asia/Taipei"],
@@ -7857,6 +7861,7 @@ export const GENERATED_AIRPORT_SEARCH_INDEX = [
   ["UGN","Waukegan National Airport","Chicago/Waukegan","US","America/Chicago"],
   ["UGO","Uige Airport","Uige","AO","Africa/Luanda"],
   ["UGS","Ugashik Airport","Ugashik","US","America/Anchorage"],
+  ["UGT","Bulagtai Resort Airport","Khankhongor","MN","Asia/Ulaanbaatar"],
   ["UGU","Bilorai Airport","Bilogai","ID","Asia/Jayapura"],
   ["UHE","Kunovice Airport","Uherské Hradiště","CZ","Europe/Prague"],
   ["UHS","Aleksandrovsk-Sakhalinskiy Airport","Aleksandrovsk-Sakhalinskiy","RU","Asia/Sakhalin"],
