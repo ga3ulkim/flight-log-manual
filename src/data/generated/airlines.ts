@@ -17,8 +17,8 @@ import type { AirlineSearchTuple } from '../../lib/airlineSearch';
 export const WIKIDATA_AIRLINE_DATA_URL = "https://query.wikidata.org/sparql";
 export const WIKIDATA_AIRLINE_DATA_LICENSE = "CC0-1.0";
 export const WIKIDATA_AIRLINE_QUERY_SHA256 = "26f82b3054cffda43d90365fae04e2cb0a887c664d3a15cf204eb7abcc6be269";
-export const WIKIDATA_AIRLINE_DATA_SHA256 = "0c3a14756d7832c244c23cbae560ebaf240df0b0498bac02b9d8a09c0e9d8a20";
-export const GENERATED_AIRLINE_COUNT = 4702;
+export const WIKIDATA_AIRLINE_DATA_SHA256 = "2e2791b646bb967ebf0224f10881f16664ecfc4e1d80b45b43f47cec845d7a31";
+export const GENERATED_AIRLINE_COUNT = 4705;
 
 export const GENERATED_AIRLINE_SEARCH_INDEX = [
   ["1time Airline",["1T"],["RNX"],"South Africa",["1Time","1time","NEXT TIME","one time!"]],
@@ -422,7 +422,7 @@ export const GENERATED_AIRLINE_SEARCH_INDEX = [
   ["Air Flamenco",["F4"],["WAF"],"United States",[]],
   ["Air Florida Commuter",[],[],"",[]],
   ["Air Foyle HeavyLift",[],[],"United Kingdom",[]],
-  ["Air France",["AF"],["AFR"],"France",["Cie Nationale Air France","Compagnie Nationale Air France","Société Aerienne Francaise d'Affretement","Société Air France, S.A."]],
+  ["Air France",["AF"],["AFR"],"France",["Cie Nationale Air France","Société Aerienne Francaise d'Affretement","Société Air France, S.A."]],
   ["Air France Asie",[],[],"France",[]],
   ["Air France Asie",[],[],"France / Taiwan",["Air France Cargo Asie"]],
   ["Air France Asie Cargo",[],[],"France",[]],
@@ -544,7 +544,7 @@ export const GENERATED_AIRLINE_SEARCH_INDEX = [
   ["Air Mikisew",["V8"],[],"Canada",[]],
   ["Air Milford",[],[],"",[]],
   ["Air Minas Linhas Aéreas",["6M"],["AMG"],"Brazil",["Air Minas Linhas Aereas"]],
-  ["Air Moana",[],[],"",[]],
+  ["Air Moana",[],[],"France",[]],
   ["Air Moldova",["9U"],["MLD"],"Moldova",[]],
   ["Air Montenegro",["ZQ"],["MNE"],"Montenegro",["2Montenegro","To Montenegro a.d","ToMontenegro"]],
   ["Air Montmagny",[],[],"Canada",[]],
@@ -962,6 +962,7 @@ export const GENERATED_AIRLINE_SEARCH_INDEX = [
   ["Asia Wings",["Y5"],["AWA"],"Kazakhstan",[]],
   ["Asian Airlines",[],[],"Nepal",[]],
   ["Asian Express Airline",["KV"],["TXP"],"Tajikistan",[]],
+  ["Asian One Air",[],[],"Indonesia",["GT Air","Mimika Air"]],
   ["Asian Wings Airways",["YJ"],["AWM"],"Myanmar",[]],
   ["Asiana Airlines",["OZ"],["AAR"],"South Korea",["ASIANA","Asiana Airlines Inc.","Asiana Cargo","Seoul Airlines"]],
   ["Askari Aviation",["4K"],["AAS"],"Pakistan",[]],
@@ -1035,6 +1036,7 @@ export const GENERATED_AIRLINE_SEARCH_INDEX = [
   ["Auvia Air",[],["UVT"],"Indonesia",[]],
   ["AV Cargo",["Z3"],["SMJ"],"Zimbabwe",["AV Cargo Airlines"]],
   ["AV8 Air",[],["MNF"],"United Kingdom",[]],
+  ["AVA Airlines",[],[],"Iran",[]],
   ["Avant Airlines",["OT"],["VAT"],"Chile",[]],
   ["Avantair",[],["VNR"],"United States",[]],
   ["Avanti Air",[],["ATV"],"Germany",[]],
@@ -1681,10 +1683,11 @@ export const GENERATED_AIRLINE_SEARCH_INDEX = [
   ["Denim Air",["J7"],["DNM"],"Netherlands",[]],
   ["Denver Air Connection",[],[],"United States",[]],
   ["Deraya Air Taxi",[],["DRY"],"Indonesia",[]],
+  ["Derazona Air Service",[],[],"Indonesia",[]],
   ["Destination Air Shuttle",[],[],"Thailand",[]],
   ["Det Norske Luftfartrederi",[],[],"Norway",["Aktieselskapet Det Norske Luftfartsrederi"]],
   ["DETA Air",["9D"],["DET"],"Kazakhstan",[]],
-  ["Deutsche Zeppelin Reederei",[],[],"Germany",[]],
+  ["Deutsche Zeppelin Reederei",[],[],"Germany",["DZR"]],
   ["DGO Jet",[],[],"",[]],
   ["DHL Aero Expreso",["D5"],["DAE"],"Panama",[]],
   ["DHL Air Austria",["Q7"],["DHA"],"Austria",[]],
@@ -3018,7 +3021,6 @@ export const GENERATED_AIRLINE_SEARCH_INDEX = [
   ["Millennium Aviation",[],[],"United States",[]],
   ["Million Air",[],[],"United States",[]],
   ["Millon Air",[],[],"United States",[]],
-  ["Mimika Air",[],[],"Indonesia",["GT Air"]],
   ["Mindanao Express",[],[],"Philippines",[]],
   ["Minerva Airlines",["N4"],["MTC"],"Italy",[]],
   ["Mingalar Aviation Services",["K7"],["KBZ"],"Myanmar",["Air KBZ","Mingalar"]],
@@ -3422,7 +3424,7 @@ export const GENERATED_AIRLINE_SEARCH_INDEX = [
   ["Platinum Airlines",[],[],"United States",[]],
   ["PLAY",["OG"],[],"Iceland",["PLAY Airlines","Play Airlines"]],
   ["Plaza Servicios Aéreos",[],[],"Spain",["Plaza Servicios Aereos"]],
-  ["PLUNA",["PU"],["PUA"],"Uruguay",["PLUNA Líneas Aéreas Uruguayas S.A.","Primeras Líneas Uruguayas de Navegación Aérea"]],
+  ["PLUNA",["PU"],["PUA"],"Uruguay",["Primeras"]],
   ["Plus Ultra Líneas Aéreas",["PU"],["PUE"],"Spain",[]],
   ["PMTair",["U4"],["PMT"],"Cambodia",[]],
   ["PNG Air",["CG"],["TOK"],"Papua New Guinea",["Airline Papua New Guinea","Airlines PNG","Airlines Papua New Guinea","Airlines of PNG","BALUS","Milne Bay Air"]],
@@ -4324,6 +4326,7 @@ export const GENERATED_AIRLINE_SEARCH_INDEX = [
   ["Transport Air Neuquén",[],[],"Argentina",[]],
   ["Transporte Aéreo Militar",[],[],"Bolivia",["T.A. Militar","TA Militar","TAM","TAM Bolivia"]],
   ["Transporte Aéreo Militar",[],["EPT"],"Bolivia",["Military Air Transport Public Company","TAM","TAM Bolivia","TAMep"]],
+  ["Transporte Aéreo Militar Uruguayo",[],[],"Uruguay",[]],
   ["Transportes Aereos Profesionales",[],[],"Guatemala",[]],
   ["Transportes Aéreos Acre",[],[],"Bolivia",["T.A. Acre","TA Acre"]],
   ["Transportes Aéreos Bolivianos",["2L"],["BOL"],"Bolivia",["Transportes Aereos Bolivianos"]],
