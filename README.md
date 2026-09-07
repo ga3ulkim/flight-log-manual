@@ -1,7 +1,5 @@
 # Personal Flight Log
 
-**사이트**: https://ga3ulkim.github.io/flight-log-manual/
-
 비행을 직접 기록하고 지도, 통계, 타임라인, `PLAY MY JOURNEY`로 다시 보는 개인용 비행 아카이브입니다. 사이트를 열면 항상 전용 기록 관리 화면에서 시작하며, 여러 비행을 연속으로 추가·수정·삭제한 뒤 `내 비행 기록 보기`를 눌러 전체 아카이브로 이동합니다.
 
 ```text
