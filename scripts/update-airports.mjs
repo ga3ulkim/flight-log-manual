@@ -39,6 +39,7 @@ function parseArguments(argumentsList) {
 async function readSource(source) {
   if (/^https?:\/\//i.test(source)) {
     const response = await fetch(source, {
+      signal: AbortSignal.timeout(60_000),
       headers: { 'User-Agent': 'Personal-Flight-Log-Airport-Updater/1.0' },
     });
     if (!response.ok) {

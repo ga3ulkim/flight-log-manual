@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import type { Flight, FlightType, ParseResult } from '../types';
+import type { Flight, FlightType, ImportRowDiagnostic, ParseResult } from '../types';
 import { parseDateInfo, parseIata } from './dateIata';
 
 export interface ColumnMap {
@@ -22,6 +22,12 @@ const HEADER_ERROR =
 const DATA_ERROR =
   '데이터 행을 읽지 못했어요. 공항 열에 IATA 코드(예: PUS)가 있어야 합니다.';
 
+// Limit worksheet expansion, including sparse sheets with enormous declared ranges.
+export const MAX_IMPORT_RECORDS = 20_000;
+export const MAX_IMPORT_WORKSHEET_ROWS = MAX_IMPORT_RECORDS + 12;
+const MAX_IMPORT_COLUMNS = 256;
+const MAX_IMPORT_CELLS = 1_000_000;
+
 function cellString(value: unknown): string {
   return String(value || '');
 }
@@ -36,9 +42,8 @@ export interface DetectedHeader {
 }
 
 export function detectColumns(rows: readonly (readonly unknown[])[]): DetectedHeader {
-  const columns: ColumnMap = {};
-
   for (let index = 0; index < Math.min(rows.length, 12); index += 1) {
+    const columns: ColumnMap = {};
     const row = (rows[index] || []).map(cellString);
     if (!row.some((cell) => cell.includes('출발')) || !row.some((cell) => cell.includes('도착'))) {
       continue;
@@ -60,10 +65,10 @@ export function detectColumns(rows: readonly (readonly unknown[])[]): DetectedHe
       else if (cell.includes('기종')) columns.ac = columnIndex;
     });
 
-    return { headerIndex: index, columns };
+    if (columns.fa != null && columns.ta != null) return { headerIndex: index, columns };
   }
 
-  return { headerIndex: -1, columns };
+  return { headerIndex: -1, columns: {} };
 }
 
 export function determineFlightType(
@@ -90,7 +95,10 @@ export function normalizeAircraft(raw: string): string {
 }
 
 /** Convert worksheet-like rows using the reference implementation's header rules. */
-export function parseRows(rows: readonly (readonly unknown[])[]): ParseResult {
+export function parseRows(rows: readonly (readonly unknown[])[], sourceRowOffset = 0): ParseResult {
+  if (rows.length > MAX_IMPORT_WORKSHEET_ROWS) {
+    throw new Error('한 번에 최대 20,000개 기록을 가져올 수 있습니다. 파일을 나눠서 선택해 주세요.');
+  }
   const { headerIndex, columns } = detectColumns(rows);
   const fromAirportColumn = columns.fa;
   const toAirportColumn = columns.ta;
@@ -100,13 +108,22 @@ export function parseRows(rows: readonly (readonly unknown[])[]): ParseResult {
   }
 
   const flights: Flight[] = [];
+  const diagnostics: ImportRowDiagnostic[] = [];
+  let dataRowCount = 0;
 
   for (let index = headerIndex + 1; index < rows.length; index += 1) {
     const row = rows[index] || [];
+    if (!row.some((cell) => cellString(cell).trim())) continue;
+    dataRowCount += 1;
+    if (dataRowCount > MAX_IMPORT_RECORDS) {
+      throw new Error('한 번에 최대 20,000개 기록을 가져올 수 있습니다. 파일을 나눠서 선택해 주세요.');
+    }
+    const sourceRow = sourceRowOffset + index + 1;
     const fromAirport = parseIata(row[fromAirportColumn]);
     const toAirport = parseIata(row[toAirportColumn]);
 
     if (!fromAirport || !toAirport) {
+      diagnostics.push({ row: sourceRow, message: '출발·도착 공항에 유효한 IATA 코드가 필요합니다.' });
       continue;
     }
 
@@ -118,6 +135,7 @@ export function parseRows(rows: readonly (readonly unknown[])[]): ParseResult {
 
     flights.push({
       id: flights.length,
+      sourceRow,
       type: determineFlightType(typeCell, fromCountry, toCountry),
       typeSource: flightTypeSource(typeCell, fromCountry, toCountry),
       fc: fromCountry,
@@ -142,6 +160,8 @@ export function parseRows(rows: readonly (readonly unknown[])[]): ParseResult {
   return {
     flights,
     err: flights.length ? null : DATA_ERROR,
+    dataRowCount,
+    diagnostics,
   };
 }
 
@@ -154,10 +174,35 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParseResult {
     return { flights: [], err: HEADER_ERROR };
   }
 
+  const declaredRange = worksheet['!fullref'] || worksheet['!ref'];
+  if (declaredRange) {
+    const range = XLSX.utils.decode_range(declaredRange);
+    const height = range.e.r - range.s.r + 1;
+    const width = range.e.c - range.s.c + 1;
+    if (range.e.r + 1 > MAX_IMPORT_WORKSHEET_ROWS || width > MAX_IMPORT_COLUMNS || height * width > MAX_IMPORT_CELLS) {
+      throw new Error('시트가 너무 큽니다. 20,000개 이하의 기록과 필요한 열만 남기거나 파일을 나눠 주세요.');
+    }
+  }
+
   const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
     header: 1,
     raw: false,
     defval: '',
   });
-  return parseRows(rows);
+  const { columns, headerIndex } = detectColumns(rows);
+  if (columns.fd != null && worksheet['!ref']) {
+    const range = XLSX.utils.decode_range(worksheet['!ref']);
+    for (let index = headerIndex + 1; index < rows.length; index += 1) {
+      const cell = worksheet[XLSX.utils.encode_cell({ r: range.s.r + index, c: range.s.c + columns.fd })];
+      if (cell?.t !== 'n' || typeof cell.v !== 'number' || !cell.z || !XLSX.SSF.is_date(cell.z)) continue;
+      // Decode spreadsheet calendar fields directly; JS Date would apply the host timezone.
+      const date = XLSX.SSF.parse_date_code(cell.v, { date1904: Boolean(workbook.Workbook?.WBProps?.date1904) });
+      if (!date) continue;
+      const pad = (value: number) => String(value).padStart(2, '0');
+      const hasTime = date.H !== 0 || date.M !== 0 || date.S !== 0
+        || /h|s|am\/pm/i.test(cell.z.replace(/"[^"]*"|\\./g, ''));
+      rows[index][columns.fd] = `${date.y}.${pad(date.m)}.${pad(date.d)}${hasTime ? ` ${pad(date.H)}:${pad(date.M)}` : ''}`;
+    }
+  }
+  return parseRows(rows, worksheet['!ref'] ? XLSX.utils.decode_range(worksheet['!ref']).s.r : 0);
 }

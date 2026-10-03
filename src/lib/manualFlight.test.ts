@@ -50,6 +50,20 @@ function record(id = 'flight-1', overrides: Partial<ManualFlightInput> = {}) {
 }
 
 describe('manual flight domain', () => {
+  it('adapts canonical immutable records but still validates foreign frozen input', () => {
+    const saved = record();
+    expect(Object.isFrozen(saved)).toBe(true);
+    expect(Object.isFrozen(saved.departure)).toBe(true);
+    expect(manualFlightToFlight(saved).departureSnapshot).toBe(saved.departure);
+    expect(() => manualFlightToFlight(Object.freeze({ ...saved, date: '2025-02-30' })))
+      .toThrow(ManualFlightValidationError);
+    const external = JSON.parse(JSON.stringify(saved));
+    expect(manualFlightToFlight(external)).toEqual(manualFlightToFlight(saved));
+    external.departure.latitude = 91;
+    expect(() => manualFlightToFlight(external)).toThrow(ManualFlightValidationError);
+    expect(manualFlightToFlight(saved).departureSnapshot.latitude).toBe(37.1);
+  });
+
   it('infers domestic and international routes only from two known country codes', () => {
     expect(inferManualFlightType(airport('ICN', 'KR'), airport('PUS', 'KR'))).toBe('국내선');
     expect(inferManualFlightType(airport('ICN', 'KR'), airport('NRT', 'JP'))).toBe('국제선');

@@ -1,5 +1,5 @@
 import { AP, type AirportCoordinate } from '../data/airports';
-import type { IataCode } from '../types';
+import type { Flight, IataCode } from '../types';
 
 export type MapPoint = readonly [x: number, y: number];
 
@@ -104,14 +104,50 @@ export function haversine(a: AirportCoordinate, b: AirportCoordinate): number {
   return 2 * earthRadiusKm * Math.asin(Math.sqrt(chord));
 }
 
+/** A saved endpoint never borrows coordinates from a different record. */
+export function flightCoordinate(flight: Flight, endpoint: 'departure' | 'arrival'): AirportCoordinate | undefined {
+  const snapshot = endpoint === 'departure' ? flight.departureSnapshot : flight.arrivalSnapshot;
+  if (snapshot) {
+    return typeof snapshot.latitude === 'number' && Number.isFinite(snapshot.latitude)
+      && typeof snapshot.longitude === 'number' && Number.isFinite(snapshot.longitude)
+      ? [snapshot.latitude, snapshot.longitude]
+      : undefined;
+  }
+  return AIRPORTS[endpoint === 'departure' ? flight.fa : flight.ta];
+}
+
+export function flightDistance(flight: Flight): number | undefined {
+  const from = flightCoordinate(flight, 'departure');
+  const to = flightCoordinate(flight, 'arrival');
+  return from && to ? haversine(from, to) : undefined;
+}
+
+export function flightArcGeometry(flight: Flight): ArcGeometry {
+  const from = flightCoordinate(flight, 'departure');
+  const to = flightCoordinate(flight, 'arrival');
+  if (!from || !to) throw new Error('Missing saved coordinates for flight');
+  const key = `${from.join(',')}>${to.join(',')}`;
+  const cached = arcCache.get(key);
+  if (cached) return cached;
+  const geometry = coordinateArcGeometry(from, to);
+  arcCache.set(key, geometry);
+  return geometry;
+}
+
 /** Build the same shortest-longitude quadratic route used by the SVG map. */
 export function arcGeometry(from: IataCode, to: IataCode): ArcGeometry {
   const key = `${from}>${to}`;
   const cached = arcCache.get(key);
   if (cached) return cached;
 
-  const [fromLatitude, fromLongitude] = knownAirport(from);
-  const [toLatitude, originalToLongitude] = knownAirport(to);
+  const geometry = coordinateArcGeometry(knownAirport(from), knownAirport(to));
+  arcCache.set(key, geometry);
+  return geometry;
+}
+
+function coordinateArcGeometry(from: AirportCoordinate, to: AirportCoordinate): ArcGeometry {
+  const [fromLatitude, fromLongitude] = from;
+  const [toLatitude, originalToLongitude] = to;
   let toLongitude = originalToLongitude;
   if (toLongitude - fromLongitude > 180) toLongitude -= 360;
   if (toLongitude - fromLongitude < -180) toLongitude += 360;
@@ -147,7 +183,6 @@ export function arcGeometry(from: IataCode, to: IataCode): ArcGeometry {
     d: `M${x1.toFixed(1)},${y1.toFixed(1)}Q${cx.toFixed(1)},${cy.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`,
   };
 
-  arcCache.set(key, geometry);
   return geometry;
 }
 

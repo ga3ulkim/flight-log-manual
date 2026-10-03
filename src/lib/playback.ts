@@ -1,6 +1,6 @@
 import type { Flight, PlaybackProgress, RouteKey } from '../types';
 import { routeKey } from './analytics';
-import { clamp, hasKnownAirport, haversine, knownAirport } from './geography';
+import { clamp, flightCoordinate, flightDistance, haversine } from './geography';
 import { compareFlightsChronologically } from './flightOrdering';
 
 export interface PlaybackAdvance {
@@ -13,8 +13,8 @@ export function chronologicalFlights(flights: readonly Flight[]): Flight[] {
   return flights
     .filter(
       (flight) =>
-        hasKnownAirport(flight.fa) &&
-        hasKnownAirport(flight.ta) &&
+        flightCoordinate(flight, 'departure') &&
+        flightCoordinate(flight, 'arrival') &&
         flight.fa !== flight.ta,
     )
     .slice()
@@ -31,7 +31,7 @@ export function journeyDuration(distanceKm: number): number {
 }
 
 export function flightDuration(flight: Flight): number {
-  const distance = haversine(knownAirport(flight.fa), knownAirport(flight.ta));
+  const distance = flightDistance(flight) ?? 0;
   return journeyDuration(distance);
 }
 
@@ -83,10 +83,9 @@ export function advancePlayback(
         t = 0;
       } else {
         t = 1;
-        const transferDistance =
-          hasKnownAirport(flight.ta) && hasKnownAirport(next.fa)
-            ? haversine(knownAirport(flight.ta), knownAirport(next.fa))
-            : 0;
+        const from = flightCoordinate(flight, 'arrival');
+        const to = flightCoordinate(next, 'departure');
+        const transferDistance = from && to ? haversine(from, to) : 0;
         const duration = groundTransferDuration(transferDistance);
         hold = duration;
         holdTotal = duration;

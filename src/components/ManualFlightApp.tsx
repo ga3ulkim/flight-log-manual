@@ -20,11 +20,11 @@ import {
   manualAppScreenAfterArchiveRequest,
   manualAppScreenAfterManagementRequest,
   manualEntryEditControlId,
-  manualEntryFlights,
   manualAppScreenAfterMutation,
   type ManualAppScreen,
 } from '../lib/manualEntryFlow';
 import { setRuntimeAirportCoordinates } from '../lib/geography';
+import { groupFlightsForTimeline } from '../lib/timeline';
 import {
   createSessionManualFlightRepository,
   type ManualFlightRepository,
@@ -90,10 +90,12 @@ export default function ManualFlightApp() {
     if (!demoMode && records.length === 0) setScreen('entry');
   }, [demoMode, records.length]);
 
-  const visibleFlights = useMemo(
-    () => demoMode ? SYNTHETIC_FLIGHTS : manualFlightsToFlights(records),
-    [demoMode, records],
+  const manualFlights = useMemo(() => manualFlightsToFlights(records), [records]);
+  const entryFlights = useMemo(
+    () => groupFlightsForTimeline(manualFlights).flatMap((group) => group.flights),
+    [manualFlights],
   );
+  const visibleFlights = demoMode ? SYNTHETIC_FLIGHTS : manualFlights;
 
   const enterDemo = () => {
     setRuntimeAirportCoordinates({});
@@ -154,7 +156,7 @@ export default function ManualFlightApp() {
   };
 
   const deleteFlight = async (manualId: string) => {
-    const orderedIds = manualEntryFlights(records)
+    const orderedIds = entryFlights
       .map((flight) => flight.manualId)
       .filter((id): id is string => Boolean(id));
     const deletedIndex = orderedIds.indexOf(manualId);
@@ -238,6 +240,7 @@ export default function ManualFlightApp() {
       {showEntry ? (
         <ManualEntryView
           records={records}
+          orderedFlights={entryFlights}
           onAddFlight={() => setEditor(null)}
           onEditFlight={openEdit}
           onDeleteFlight={requestDelete}

@@ -1,6 +1,7 @@
 import {
   type ChangeEvent,
   type ReactNode,
+  useEffect,
   useId,
   useRef,
   useState,
@@ -19,6 +20,8 @@ import {
   manualCsvFileName,
 } from '../../lib/manualCsv';
 import type { ManualFlightRecord } from '../../lib/manualFlight';
+import { loadAirportSearchCatalog } from '../../lib/airportSearch';
+import { previewLegacyFlightImport, type LegacyImportPreview } from '../../lib/manualImport';
 import type { Flight } from '../../types';
 import { ConfirmDialog } from './ConfirmDialog';
 import { DialogShell } from './DialogShell';
@@ -55,9 +58,8 @@ export interface DataManagementDialogProps {
   onClearAll: () => MaybePromise<void>;
 }
 
-interface LegacyPreview {
+interface LegacyPreview extends LegacyImportPreview {
   sourceFileName: string;
-  flights: readonly Flight[];
 }
 
 const MAX_LOCAL_FILE_BYTES = 50 * 1024 * 1024;
@@ -131,12 +133,12 @@ function restoreStatus(
   return `병합 완료: ${result.added}개 추가, ${result.updated}개 갱신, ${result.skipped}개 유지`;
 }
 
-function legacyStatus(result: LegacyFlightImportResult | void, incomingCount: number): string {
-  if (!result) return `${incomingCount}개 기존 기록을 가져왔습니다.`;
-  const skipped = result.skipped ?? 0;
+function legacyStatus(result: LegacyFlightImportResult | void, incomingCount: number, excluded: number): string {
+  const added = result?.added ?? incomingCount;
+  const skipped = (result?.skipped ?? 0) + excluded;
   return skipped
-    ? `${result.added}개 추가, ${skipped}개 건너뜀`
-    : `${result.added}개 기록을 추가했습니다.`;
+    ? `${added}개 추가, ${skipped}개 건너뜀`
+    : `${added}개 기록을 추가했습니다.`;
 }
 
 interface DataSectionProps {
@@ -181,16 +183,23 @@ function DataManagementDialogSession({
   const jsonInputId = useId();
   const legacyInputId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
+  const fileReadActive = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const [backupPreview, setBackupPreview] = useState<ManualFlightBackup | null>(null);
   const [backupFileName, setBackupFileName] = useState('');
   const [restoreMode, setRestoreMode] = useState<ManualBackupRestoreMode>('merge');
   const [legacyPreview, setLegacyPreview] = useState<LegacyPreview | null>(null);
   const [legacyParsing, setLegacyParsing] = useState(false);
+  const [backupReading, setBackupReading] = useState(false);
   const [operation, setOperation] = useState<ActiveOperation>(null);
   const [confirmation, setConfirmation] = useState<PendingConfirmation>(null);
   const [status, setStatus] = useState('');
   const [actionError, setActionError] = useState('');
-  const busy = operation !== null || legacyParsing;
+  const busy = operation !== null || legacyParsing || backupReading;
   const currentIds = new Set(records.map((record) => record.id));
   const overlapCount = backupPreview?.flights.reduce(
     (count, flight) => count + (currentIds.has(flight.id) ? 1 : 0),
@@ -236,7 +245,7 @@ function DataManagementDialogSession({
   const readBackup = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = '';
-    if (!file) return;
+    if (!file || busy || fileReadActive.current) return;
     prepareAction();
     setBackupPreview(null);
     setBackupFileName('');
@@ -244,13 +253,20 @@ function DataManagementDialogSession({
       setActionError('파일이 너무 큽니다. 50MB 이하의 JSON 백업을 선택해 주세요.');
       return;
     }
+    fileReadActive.current = true;
+    setBackupReading(true);
     try {
-      const backup = parseManualFlightBackup(await file.text());
+      const content = await file.text();
+      if (!mounted.current) return;
+      const backup = parseManualFlightBackup(content);
       setBackupPreview(backup);
       setBackupFileName(file.name);
       setRestoreMode('merge');
     } catch (caught) {
-      setActionError(errorMessage(caught));
+      if (mounted.current) setActionError(errorMessage(caught));
+    } finally {
+      fileReadActive.current = false;
+      if (mounted.current) setBackupReading(false);
     }
   };
 
@@ -283,7 +299,7 @@ function DataManagementDialogSession({
   const parseLegacy = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = '';
-    if (!file) return;
+    if (!file || busy || fileReadActive.current) return;
     prepareAction();
     setLegacyPreview(null);
     if (file.size > MAX_LOCAL_FILE_BYTES) {
@@ -291,17 +307,22 @@ function DataManagementDialogSession({
       return;
     }
 
+    fileReadActive.current = true;
     setLegacyParsing(true);
     try {
       // SheetJS and the legacy parser remain out of the initial archive bundle.
       const { parseFlightFile } = await import('../../lib/fileParser');
       const result = await parseFlightFile(file);
-      if (result.err) throw new Error(result.err);
-      setLegacyPreview({ sourceFileName: file.name, flights: result.flights });
+      if (!mounted.current) return;
+      if (result.err && !result.diagnostics?.length) throw new Error(result.err);
+      const catalog = await loadAirportSearchCatalog();
+      if (!mounted.current) return;
+      setLegacyPreview({ sourceFileName: file.name, ...previewLegacyFlightImport(result, catalog) });
     } catch (caught) {
-      setActionError(errorMessage(caught));
+      if (mounted.current) setActionError(errorMessage(caught));
     } finally {
-      setLegacyParsing(false);
+      fileReadActive.current = false;
+      if (mounted.current) setLegacyParsing(false);
     }
   };
 
@@ -313,7 +334,7 @@ function DataManagementDialogSession({
     setStatus('');
     try {
       const result = await onImportLegacy(legacyPreview);
-      setStatus(legacyStatus(result, incomingCount));
+      setStatus(legacyStatus(result, incomingCount, legacyPreview.diagnostics.length));
       setLegacyPreview(null);
       setConfirmation(null);
       window.setTimeout(() => closeRef.current?.focus({ preventScroll: true }), 0);
@@ -396,7 +417,7 @@ function DataManagementDialogSession({
             description={MANUAL_SESSION_DATA_COPY.restore}
           >
             <label className="manual-file-picker" htmlFor={jsonInputId} aria-disabled={busy}>
-              JSON 파일 선택
+              {backupReading ? '파일 읽는 중…' : 'JSON 파일 선택'}
             </label>
             <input
               id={jsonInputId}
@@ -483,11 +504,24 @@ function DataManagementDialogSession({
               <div className="manual-import-preview" aria-live="polite">
                 <div className="manual-import-preview__title">
                   <strong>{legacyPreview.sourceFileName}</strong>
-                  <span>{legacyPreview.flights.length}개 행 확인</span>
+                  <span>전체 {legacyPreview.dataRowCount}개 · 가져오기 {legacyPreview.flights.length}개 · 제외 {legacyPreview.diagnostics.length}개</span>
                 </div>
                 <p className="manual-field-note">
                   각 행은 새 ID로 추가합니다. 날짜와 노선이 같아도 자동으로 중복 처리하지 않습니다.
                 </p>
+                {legacyPreview.diagnostics.length > 0 && (
+                  <div role="status">
+                    <strong>제외되는 행을 확인해 주세요.</strong>
+                    <ul>
+                      {legacyPreview.diagnostics.slice(0, 20).map(({ row, message }) => (
+                        <li key={row}>{row}행: {message}</li>
+                      ))}
+                    </ul>
+                    {legacyPreview.diagnostics.length > 20 && (
+                      <p>외 {legacyPreview.diagnostics.length - 20}개 행 제외</p>
+                    )}
+                  </div>
+                )}
                 <ul className="manual-legacy-sample" aria-label="가져오기 미리보기">
                   {legacyPreview.flights.slice(0, 5).map((flight, index) => (
                     <li key={`${flight.fa}-${flight.ta}-${flight.d}-${index}`}>

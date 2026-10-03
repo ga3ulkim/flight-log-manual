@@ -1,10 +1,12 @@
 import * as XLSX from 'xlsx';
 import { describe, expect, it } from 'vitest';
-import { decodeCsvBytes, flightFileKind } from './fileParser';
+import { decodeCsvBytes, flightFileKind, parseFlightFile } from './fileParser';
 import {
   detectColumns,
   determineFlightType,
   normalizeAircraft,
+  MAX_IMPORT_WORKSHEET_ROWS,
+  MAX_IMPORT_RECORDS,
   parseRows,
   parseWorkbook,
 } from './parser';
@@ -40,6 +42,74 @@ const ROW = [
 ];
 
 describe('workbook header detection', () => {
+  it('accepts the record limit and rejects one extra row without truncation', () => {
+    const rows = [HEADER, ...Array.from({ length: MAX_IMPORT_RECORDS }, () => ROW)];
+    expect(parseRows(rows).flights).toHaveLength(MAX_IMPORT_RECORDS);
+    expect(() => parseRows([...rows, ROW])).toThrow('최대 20,000개');
+  });
+
+  it('rejects oversized sparse or truncated worksheet ranges before expanding cells', () => {
+    for (const range of ['A1:XFD1048576', 'A1:A20013', 'A1:IW2', 'A1:AX20012']) {
+      const sheet = XLSX.utils.aoa_to_sheet([HEADER, ROW]);
+      sheet['!fullref'] = range;
+      expect(() => parseWorkbook({ SheetNames: ['Flights'], Sheets: { Flights: sheet } })).toThrow('시트가 너무 큽니다');
+    }
+  });
+
+  it('rejects a CSV beyond the row limit instead of importing a truncated prefix', async () => {
+    const csv = ['출발 공항,도착 공항,출발 일', ...Array.from({ length: MAX_IMPORT_WORKSHEET_ROWS }, () => 'ICN,NRT,2026.08.19')].join('\n');
+    await expect(parseFlightFile(new File([csv], 'oversized.csv'))).rejects.toThrow('시트가 너무 큽니다');
+  });
+
+  it('reports omitted rows and retains source positions across empty rows', () => {
+    const result = parseRows([HEADER, ROW, [], ['invalid'], ROW], 3);
+    expect(result.dataRowCount).toBe(3);
+    expect(result.flights.map((flight) => flight.sourceRow)).toEqual([5, 8]);
+    expect(result.diagnostics).toEqual([{ row: 7, message: expect.stringContaining('IATA') }]);
+  });
+
+  it('continues past a title mentioning departure and arrival', () => {
+    expect(parseRows([['출발·도착 비행 기록'], HEADER, ROW]).flights).toHaveLength(1);
+  });
+
+  it.each(['xlsx', 'xls'] as const)('reads real %s date cells independently of display format', async (bookType) => {
+    const serial = (Date.UTC(2026, 7, 19) - Date.UTC(1899, 11, 30)) / 86_400_000;
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['출발 공항', '도착 공항', '출발 일'],
+      ['ICN', 'NRT', serial + 14.5 / 24],
+      ['NRT', 'ICN', serial],
+    ]);
+    worksheet.C2.z = 'm/d/yy h:mm';
+    worksheet.C3.z = 'm/d/yy';
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Flights');
+    const bytes = XLSX.write(workbook, { type: 'array', bookType });
+    const parsed = await parseFlightFile(new File([bytes], `synthetic.${bookType}`));
+    expect(parsed.flights[0]).toMatchObject({ d: '2026.08.19', departureTime: '14:30' });
+    expect(parsed.flights[1]).toMatchObject({ d: '2026.08.19' });
+    expect(parsed.flights[1].departureTime).toBeUndefined();
+  });
+
+  it('respects the 1904 workbook date system and explicit midnight', () => {
+    const serial = (Date.UTC(2026, 7, 19) - Date.UTC(1904, 0, 1)) / 86_400_000;
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['출발 공항', '도착 공항', '출발 일'], ['ICN', 'NRT', serial],
+    ]);
+    worksheet.C2.z = 'yyyy/mm/dd hh:mm';
+    const workbook = XLSX.utils.book_new();
+    workbook.Workbook = { WBProps: { date1904: true } };
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Flights');
+    expect(parseWorkbook(workbook).flights[0]).toMatchObject({
+      d: '2026.08.19', departureTime: '00:00',
+    });
+  });
+
+  it('preserves slash dates and leading zero text when reading CSV', async () => {
+    const csv = '출발 공항,도착 공항,출발 일,편명\nICN,NRT,2026/08/19 14:30,0012';
+    const parsed = await parseFlightFile(new File([csv], 'synthetic.csv'));
+    expect(parsed.flights[0]).toMatchObject({ d: '2026.08.19', departureTime: '14:30', fn: '0012' });
+  });
+
   it('finds a reordered header within the first twelve rows', () => {
     const rows = [...Array.from({ length: 11 }, () => ['synthetic note']), HEADER];
     const detected = detectColumns(rows);

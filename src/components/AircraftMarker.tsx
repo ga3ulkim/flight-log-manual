@@ -1,7 +1,7 @@
 import type { Flight, PlaybackState } from '../types';
 import {
-  AIRPORTS,
-  arcGeometry,
+  flightCoordinate,
+  flightArcGeometry,
   clamp,
   quadraticAngle,
   quadraticPoint,
@@ -204,10 +204,10 @@ export default function AircraftMarker({
 }: AircraftMarkerProps) {
   if (!currentFlight) return null;
 
-  const geometry = arcGeometry(currentFlight.fa, currentFlight.ta);
+  const geometry = flightArcGeometry(currentFlight);
   if (play.hold > 0) {
     const [fromX, fromY] = quadraticPoint(geometry, 1);
-    const nextAirport = nextFlight ? AIRPORTS[nextFlight.fa] : undefined;
+    const nextAirport = nextFlight ? flightCoordinate(nextFlight, 'departure') : undefined;
     const [toX, toY] = nextAirport
       ? wrapTowards(fromX, nextAirport[0], nextAirport[1])
       : [fromX, fromY];

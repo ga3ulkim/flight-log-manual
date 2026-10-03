@@ -1,5 +1,5 @@
 import { resolveAirportCoordinate } from '../data/airports';
-import type { Flight } from '../types';
+import type { Flight, ImportRowDiagnostic, ParseResult } from '../types';
 import type { AirportSearchCatalog, AirportSearchEntry } from './airportSearch';
 import {
   ManualFlightValidationError,
@@ -21,6 +21,46 @@ export interface LegacyFlightConversionResult {
 export interface LegacyFlightRecordConversionResult {
   records: ManualFlightRecord[];
   skipped: number;
+}
+
+export interface LegacyImportPreview {
+  flights: Flight[];
+  dataRowCount: number;
+  diagnostics: ImportRowDiagnostic[];
+}
+
+/** Preflight uses the same domain validation as the final atomic import. */
+export function previewLegacyFlightImport(
+  parsed: ParseResult,
+  catalog: Pick<AirportSearchCatalog, 'findByIata'>,
+): LegacyImportPreview {
+  const diagnostics = [...(parsed.diagnostics ?? [])];
+  const flights: Flight[] = [];
+  parsed.flights.forEach((flight, index) => {
+    const row = flight.sourceRow ?? index + 1;
+    try {
+      const { inputs } = legacyFlightsToManualInputs([flight], catalog);
+      if (!inputs.length) {
+        diagnostics.push({ row, message: legacyDateOnly(flight)
+          ? '국가 정보 또는 명시적인 국내선·국제선 구분이 필요합니다.'
+          : '유효한 연·월·일 날짜가 필요합니다.' });
+        return;
+      }
+      createManualFlight(inputs[0], {
+        generateId: () => 'import-preview',
+        now: () => new Date('2000-01-01T00:00:00Z'),
+      });
+      flights.push(flight);
+    } catch (error) {
+      if (!(error instanceof ManualFlightValidationError)) throw error;
+      diagnostics.push({ row, message: error.message });
+    }
+  });
+  return {
+    flights,
+    dataRowCount: parsed.dataRowCount ?? parsed.flights.length + (parsed.diagnostics?.length ?? 0),
+    diagnostics: diagnostics.sort((left, right) => left.row - right.row),
+  };
 }
 
 function legacyDateOnly(flight: Flight): string | null {

@@ -23,7 +23,8 @@ import {
   CAMERA_SCALE_MIN as S_MIN,
   MAP_HEIGHT as H,
   MAP_WIDTH as W,
-  arcGeometry as arcGeom,
+  flightArcGeometry as arcGeom,
+  flightCoordinate,
   clamp,
   haversine,
   knownAirport,
@@ -301,8 +302,8 @@ export default function FlightLogChart({
         let rawTx = null, fy = 0, sT = 2, trackKey = null;
         if (hold > 0 && seq[idx] && seq[idx + 1]) {
           const curF = seq[idx], nextF = seq[idx + 1];
-          const [ax, ay] = quadPoint(arcGeom(curF.fa, curF.ta), 1);
-          const nextAirport = AIRPORTS[nextF.fa];
+          const [ax, ay] = quadPoint(arcGeom(curF), 1);
+          const nextAirport = flightCoordinate(nextF, 'departure');
           const [bx, by] = nextAirport ? wrapTowards(ax, nextAirport[0], nextAirport[1]) : [ax, ay];
           const hT = clamp(1 - hold / (holdTotal || 1), 0, 1);
           rawTx = ax + (bx - ax) * hT; fy = ay + (by - ay) * hT;
@@ -310,7 +311,7 @@ export default function FlightLogChart({
           sT = spanScale(ax, ay, bx, by);
           trackKey = 'h' + idx;
         } else if (seq[idx]) {
-          const g = arcGeom(seq[idx].fa, seq[idx].ta);
+          const g = arcGeom(seq[idx]);
           const pt = quadPoint(g, clamp(t, 0, 1));
           rawTx = pt[0]; fy = pt[1]; sT = routeScale(g);
           trackKey = 'f' + idx;
@@ -417,7 +418,7 @@ export default function FlightLogChart({
     const resume = play.idx >= 0 && !(play.idx === seq.length - 1 && play.t >= 1);
     if (!resume) {
       const firstFlight = seq[0];
-      const geometry = arcGeom(firstFlight.fa, firstFlight.ta);
+      const geometry = arcGeom(firstFlight);
       const targetX = normalizeWorldX(geometry.x1);
       const scale = routeScale(geometry);
       setCam(() => {

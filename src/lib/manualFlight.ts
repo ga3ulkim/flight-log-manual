@@ -443,8 +443,15 @@ function freezeAirport(airport: ManualAirportSnapshot): ManualAirportSnapshot {
   return Object.freeze({ ...airport });
 }
 
+// Only canonical records frozen by this module qualify; foreign frozen objects do not.
+const canonicalRecords = new WeakSet<object>();
+
+function isCanonicalRecord(value: unknown): value is ManualFlightRecord {
+  return typeof value === 'object' && value !== null && canonicalRecords.has(value);
+}
+
 function freezeRecord(record: ManualFlightRecord): ManualFlightRecord {
-  return Object.freeze({
+  const frozen = Object.freeze({
     ...record,
     departure: freezeAirport(record.departure),
     arrival: freezeAirport(record.arrival),
@@ -452,6 +459,8 @@ function freezeRecord(record: ManualFlightRecord): ManualFlightRecord {
       ? { airlineSnapshot: Object.freeze({ ...record.airlineSnapshot }) }
       : {}),
   });
+  canonicalRecords.add(frozen);
+  return frozen;
 }
 
 export function createManualFlight(
@@ -599,7 +608,7 @@ export function manualFlightToFlight(
   recordValue: ManualFlightRecord | unknown,
   visualizationId?: number,
 ): ManualAdaptedFlight {
-  const record = validateManualFlightRecord(recordValue);
+  const record = isCanonicalRecord(recordValue) ? recordValue : validateManualFlightRecord(recordValue);
   const displayDate = record.date.replace(/-/g, '.');
   const airlineSnapshot = record.airlineSnapshot;
   return {

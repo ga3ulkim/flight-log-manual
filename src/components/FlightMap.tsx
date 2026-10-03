@@ -6,6 +6,8 @@ import {
   MAP_HEIGHT,
   MAP_WIDTH,
   arcGeometry,
+  flightArcGeometry,
+  flightCoordinate,
   clamp,
   projectLatitude,
   projectLongitude,
@@ -97,11 +99,18 @@ export default function FlightMap({
   const viewY = clamp(camera.cy - viewHeight / 2, 0, MAP_HEIGHT - viewHeight);
   const inverseScale = 1 / camera.s;
   const showAllLabels = camera.s >= 3;
+  const hasCoordinateConflicts = useMemo(() => [...analytics.routes.values()].some((route) =>
+    route.items.some((flight) => (['departure', 'arrival'] as const).some((endpoint) => {
+      const saved = flightCoordinate(flight, endpoint);
+      const representative = AIRPORTS[endpoint === 'departure' ? flight.fa : flight.ta];
+      return saved && representative
+        && (saved[0] !== representative[0] || saved[1] !== representative[1]);
+    }))), [analytics.routes]);
   const nextFlight = sequence[play.idx + 1];
   const transferSegments = useMemo(() => {
     if (!currentFlight || !nextFlight || currentFlight.ta === nextFlight.fa) return null;
-    const from = AIRPORTS[currentFlight.ta];
-    const to = AIRPORTS[nextFlight.fa];
+    const from = flightCoordinate(currentFlight, 'arrival');
+    const to = flightCoordinate(nextFlight, 'departure');
     if (!from || !to) return null;
     return segmentTransferByLand(geographicPoint(from), geographicPoint(to));
   }, [currentFlight, nextFlight]);
@@ -123,6 +132,9 @@ export default function FlightMap({
           {analytics.routes.size > 0
             ? '노선을 선택하면 기록을 볼 수 있어요 · 재생 중 카메라 자동 추적'
             : '지도 좌표가 있는 노선이 없습니다 · 기록과 통계는 아래에서 계속 볼 수 있어요'}
+          {hasCoordinateConflicts && (
+            <p className="manual-field-help">같은 공항 코드의 위치가 기록마다 다릅니다. 지도 공항·묶음 노선은 대표 위치로, 거리와 재생은 각 기록의 위치로 표시합니다.</p>
+          )}
         </div>
         <div className="flc-map-legend" aria-label="노선 범례">
           {playActive ? (
@@ -247,7 +259,9 @@ export default function FlightMap({
               {[...analytics.routes.values()].map((route) => {
                 if (!AIRPORTS[route.a] || !AIRPORTS[route.b]) return null;
                 const key = routeKey(route.a, route.b);
-                const geometry = arcGeometry(route.a, route.b);
+                const geometry = playActive && currentFlight && currentRouteKey === key
+                  ? flightArcGeometry(currentFlight)
+                  : arcGeometry(route.a, route.b);
                 const selected = !playActive && selectedKey === key;
                 const current = playActive && currentRouteKey === key;
                 const flown = playActive && !current && playedKeys?.has(key);

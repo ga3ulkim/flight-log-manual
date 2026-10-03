@@ -5,8 +5,10 @@ import type { Flight } from '../types';
 import {
   legacyFlightsToManualInputs,
   legacyFlightsToManualRecords,
+  previewLegacyFlightImport,
 } from './manualImport';
 import { createSessionManualFlightRepository } from '../storage/sessionManualFlightRepository';
+import { parseFlightFile } from './fileParser';
 
 const entries = new Map<string, AirportSearchEntry>([
   ['ICN', {
@@ -56,6 +58,58 @@ function legacyFlight(date = '2025.01.21'): Flight {
 }
 
 describe('legacy manual import adapter', () => {
+  it('imports only preflight-accepted file rows while preserving duplicates, time, and leading zeros', async () => {
+    const csv = [
+      '출발 공항,도착 공항,출발 일,국제선/국내선,편명',
+      'ICN,NRT,2026/08/19 14:30,국제선,0012',
+      'ICN,NRT,2026.02.30,국제선,INVALID-DATE',
+      '??,NRT,2026.08.19,국제선,INVALID-IATA',
+      'JFK,NRT,2026.03.08 02:30,국제선,DST-GAP',
+      'ICN,NRT,2026/08/19 14:30,국제선,0012',
+    ].join('\n');
+    const catalog = { findByIata: (iata: string) => entries.get(iata) };
+    const preview = previewLegacyFlightImport(await parseFlightFile(new File([csv], 'synthetic.csv')), catalog);
+    expect(preview.dataRowCount).toBe(5);
+    expect(preview.flights.map(({ sourceRow }) => sourceRow)).toEqual([2, 6]);
+    expect(preview.diagnostics.map(({ row }) => row)).toEqual([3, 4, 5]);
+    const converted = legacyFlightsToManualRecords(preview.flights, catalog, (index) => ({
+      generateId: () => `file-${index}`, now: () => new Date(1787097600000 + index),
+    }));
+    const repository = createSessionManualFlightRepository();
+    expect(await repository.merge(converted.records)).toMatchObject({ added: 2, total: 2 });
+    const stored = await repository.list();
+    expect(stored.map(({ id }) => id)).toEqual(['file-0', 'file-1']);
+    expect(stored.every(({ date, departureTime, flightNumber }) => date === '2026-08-19' && departureTime === '14:30' && flightNumber === '0012')).toBe(true);
+  });
+
+  it('preflights every parsed row and reports domain failures before confirmation', () => {
+    const valid = { ...legacyFlight(), sourceRow: 3 };
+    const invalidDate = { ...legacyFlight('2025.02.30'), sourceRow: 4 };
+    const sameAirport = { ...legacyFlight(), ta: 'ICN', sourceRow: 5 };
+    const gap = { ...legacyFlight('2026.03.08'), fa: 'JFK', departureTime: '02:30', sourceRow: 6 };
+    const unresolved = { ...legacyFlight(), fa: 'ZZZ', ta: 'YYY', fc: '', tc: '', typeSource: 'fallback' as const, sourceRow: 7 };
+    const parsed = {
+      flights: [valid, invalidDate, sameAirport, gap, unresolved, { ...valid, sourceRow: 9 }],
+      err: null,
+      dataRowCount: 7,
+      diagnostics: [{ row: 8, message: 'Invalid IATA' }],
+    };
+    const preview = previewLegacyFlightImport(parsed, { findByIata: (iata) => entries.get(iata) });
+    expect(preview.dataRowCount).toBe(7);
+    expect(preview.flights.map((flight) => flight.sourceRow)).toEqual([3, 9]);
+    expect(preview.diagnostics.map(({ row }) => row)).toEqual([4, 5, 6, 7, 8]);
+    expect(preview.diagnostics.every(({ message }) => message.length > 0)).toBe(true);
+    // Duplicate flights remain legitimate; source data and parser diagnostics are untouched.
+    expect(parsed.flights).toHaveLength(6);
+    expect(parsed.diagnostics).toHaveLength(1);
+  });
+
+  it('does not disguise unexpected catalog failures as skipped rows', () => {
+    expect(() => previewLegacyFlightImport({ flights: [legacyFlight()], err: null }, {
+      findByIata: () => { throw new Error('catalog unavailable'); },
+    })).toThrow('catalog unavailable');
+  });
+
   it('converts parser output into snapshot-rich manual inputs', () => {
     const result = legacyFlightsToManualInputs(
       [legacyFlight()],

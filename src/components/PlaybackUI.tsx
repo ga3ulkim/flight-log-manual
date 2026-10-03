@@ -43,13 +43,13 @@ export default function PlaybackUI({
   const transferLabel = transferActive
     ? `${transferMode === 'sea' ? '해상 이동' : '지상 이동'} → ${nextFlight.fa}`
     : null;
-  const transferProgress =
-    play.hold > 0 && play.holdTotal > 0 ? 1 - play.hold / play.holdTotal : play.t;
+  // Transfers occur after a completed flight; they do not undo flight progress.
+  const completedFlightProgress = play.hold > 0 ? 1 : play.t;
   const overallProgress =
     active && sequenceLength > 0
       ? Math.max(
           0,
-          Math.min(100, ((Math.max(0, play.idx) + transferProgress) / sequenceLength) * 100),
+          Math.min(100, ((Math.max(0, play.idx) + completedFlightProgress) / sequenceLength) * 100),
         )
       : 0;
   const playLabel = play.on ? '⏸ 일시정지' : active ? '▶ 계속 재생' : '▶ PLAY MY JOURNEY';

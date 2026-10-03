@@ -12,7 +12,7 @@ export function parseDateInfo(raw: unknown): DateInfo {
   const year = Number(yearMatch[0]);
   const KoreanMonthMatch = value.match(/(\d{1,2})\s*월/);
   const KoreanDayMatch = value.match(/(\d{1,2})\s*일/);
-  const numericDateMatch = value.match(/(19|20)\d{2}[.-](\d{1,2})[.-](\d{1,2})/);
+  const numericDateMatch = value.match(/(19|20)\d{2}[./-](\d{1,2})[./-](\d{1,2})/);
   const month = KoreanMonthMatch
     ? Number(KoreanMonthMatch[1])
     : numericDateMatch

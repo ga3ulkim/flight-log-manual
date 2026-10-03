@@ -10,11 +10,11 @@ import type {
   StatTab,
   YearFilter,
 } from '../types';
-import { hasKnownAirport, haversine, knownAirport } from './geography';
+import { flightCoordinate, flightDistance, hasKnownAirport } from './geography';
 
 type RankingSource = Pick<
   FlightAnalytics | LiveFlightAnalytics,
-  'apUse' | 'cCount' | 'cities' | 'alCount'
+  'apUse' | 'cCount' | 'cities' | 'alCount' | 'countryLabels'
 >;
 
 export function routeKey(fromAirport: string, toAirport: string): RouteKey {
@@ -56,6 +56,30 @@ function addCount(counts: Map<string, number>, value: string): void {
   if (value) counts.set(value, (counts.get(value) || 0) + 1);
 }
 
+function flightCountries(flight: Flight): Array<readonly [key: string, label: string]> {
+  return [
+    [flight.departureSnapshot?.countryCode || flight.fc, flight.fc],
+    [flight.arrivalSnapshot?.countryCode || flight.tc, flight.tc],
+  ];
+}
+
+function addCountries(
+  flight: Flight,
+  countries: Set<string>,
+  counts: Map<string, number>,
+  labels: Map<string, string>,
+): void {
+  const visited = new Set<string>();
+  for (const [key, label] of flightCountries(flight)) {
+    if (!key) continue;
+    if (!labels.has(key)) labels.set(key, label || key);
+    if (visited.has(key)) continue;
+    visited.add(key);
+    countries.add(key);
+    addCount(counts, key);
+  }
+}
+
 export function aggregateFlights(flights: readonly Flight[]): FlightAnalytics {
   const routes = new Map<RouteKey, RouteRecord>();
   const apUse = new Map<string, AirportUsage>();
@@ -63,6 +87,7 @@ export function aggregateFlights(flights: readonly Flight[]): FlightAnalytics {
   const countries = new Set<string>();
   const cities = new Map<string, number>();
   const cCount = new Map<string, number>();
+  const countryLabels = new Map<string, string>();
   const alCount = new Map<string, number>();
   let km = 0;
   let intl = 0;
@@ -76,16 +101,12 @@ export function aggregateFlights(flights: readonly Flight[]): FlightAnalytics {
       [flight.fa, flight.fcity],
       [flight.ta, flight.tcity],
     ];
-    airportVisits.forEach(([code, city]) => {
+    airportVisits.forEach(([code, city], index) => {
       addAirportUsage(apUse, code, city);
-      if (!hasKnownAirport(code)) unknown.add(code);
+      if (!flightCoordinate(flight, index === 0 ? 'departure' : 'arrival')) unknown.add(code);
     });
 
-    const countriesInFlight = new Set([flight.fc, flight.tc].filter(Boolean));
-    countriesInFlight.forEach((country) => {
-      countries.add(country);
-      addCount(cCount, country);
-    });
+    addCountries(flight, countries, cCount, countryLabels);
     [flight.fcity, flight.tcity].forEach((city) => addCount(cities, city));
     addCount(alCount, flight.al);
 
@@ -103,9 +124,7 @@ export function aggregateFlights(flights: readonly Flight[]): FlightAnalytics {
       routes.set(key, current);
     }
 
-    if (hasKnownAirport(flight.fa) && hasKnownAirport(flight.ta)) {
-      km += haversine(knownAirport(flight.fa), knownAirport(flight.ta));
-    }
+    km += flightDistance(flight) ?? 0;
   });
 
   return {
@@ -118,6 +137,7 @@ export function aggregateFlights(flights: readonly Flight[]): FlightAnalytics {
     countries,
     cities,
     cCount,
+    countryLabels,
     alCount,
   };
 }
@@ -134,6 +154,7 @@ export function aggregateLiveFlights(
   const countries = new Set<string>();
   const cities = new Map<string, number>();
   const cCount = new Map<string, number>();
+  const countryLabels = new Map<string, string>();
   const alCount = new Map<string, number>();
   let km = 0;
   let intl = 0;
@@ -146,15 +167,11 @@ export function aggregateLiveFlights(
     addAirportUsage(apUse, flight.fa, flight.fcity);
     addAirportUsage(apUse, flight.ta, flight.tcity);
 
-    const countriesInFlight = new Set([flight.fc, flight.tc].filter(Boolean));
-    countriesInFlight.forEach((country) => {
-      countries.add(country);
-      addCount(cCount, country);
-    });
+    addCountries(flight, countries, cCount, countryLabels);
     [flight.fcity, flight.tcity].forEach((city) => addCount(cities, city));
     addCount(alCount, flight.al);
 
-    const fullDistance = haversine(knownAirport(flight.fa), knownAirport(flight.ta));
+    const fullDistance = flightDistance(flight) ?? 0;
     km += index === flights.length - 1 ? fullDistance * Math.max(0, Math.min(1, progress)) : fullDistance;
   });
 
@@ -167,6 +184,7 @@ export function aggregateLiveFlights(
     dom,
     apUse,
     cCount,
+    countryLabels,
     cities,
     alCount,
   };
@@ -188,7 +206,8 @@ export function rankingData(source: RankingSource, tab: StatTab): RankingEntry[]
             );
 
   return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1]);
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, count]) => [tab === '국가' ? source.countryLabels?.get(key) ?? key : key, count] as const);
 }
 
 export function activeRankingNames(
@@ -196,7 +215,9 @@ export function activeRankingNames(
   flight: Flight,
   tab: StatTab,
 ): Set<string> {
-  if (tab === '국가') return new Set([flight.fc, flight.tc].filter(Boolean));
+  if (tab === '국가') return new Set(flightCountries(flight)
+    .filter(([key]) => Boolean(key))
+    .map(([key, label]) => analytics.countryLabels?.get(key) ?? (label || key)));
   if (tab === '도시') return new Set([flight.fcity, flight.tcity].filter(Boolean));
   if (tab === '항공사') return new Set([flight.al].filter(Boolean));
 

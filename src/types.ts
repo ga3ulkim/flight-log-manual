@@ -9,6 +9,11 @@ export interface Flight {
   id: number;
   /** Stable manual-record identity for CRUD; absent for demo/legacy rows. */
   manualId?: string;
+  /** Original one-based worksheet row, retained only during local import. */
+  sourceRow?: number;
+  /** Saved endpoint metadata; explicit missing coordinates stay missing. */
+  departureSnapshot?: FlightEndpointSnapshot;
+  arrivalSnapshot?: FlightEndpointSnapshot;
   /** Legacy-import provenance; fallback means the parser lacked safe evidence. */
   typeSource?: 'explicit' | 'countries' | 'fallback';
   type: FlightType;
@@ -40,6 +45,13 @@ export interface DateInfo {
   d: string;
   departureTime?: string;
   sortKey: string;
+}
+
+export interface FlightEndpointSnapshot {
+  latitude?: number | null;
+  longitude?: number | null;
+  countryCode?: string;
+  countryName?: string;
 }
 
 export interface Camera {
@@ -85,6 +97,7 @@ export interface FlightAnalytics {
   countries: Set<string>;
   cities: Map<string, number>;
   cCount: Map<string, number>;
+  countryLabels?: Map<string, string>;
   alCount: Map<string, number>;
 }
 
@@ -97,6 +110,7 @@ export interface LiveFlightAnalytics {
   dom: number;
   apUse: Map<IataCode, AirportUsage>;
   cCount: Map<string, number>;
+  countryLabels?: Map<string, string>;
   cities: Map<string, number>;
   alCount: Map<string, number>;
 }
@@ -106,4 +120,11 @@ export type RankingEntry = readonly [name: string, count: number];
 export interface ParseResult {
   flights: Flight[];
   err: string | null;
+  dataRowCount?: number;
+  diagnostics?: ImportRowDiagnostic[];
+}
+
+export interface ImportRowDiagnostic {
+  row: number;
+  message: string;
 }

@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import type { ParseResult } from '../types';
-import { parseWorkbook } from './parser';
+import { MAX_IMPORT_WORKSHEET_ROWS, parseWorkbook } from './parser';
 
 export type FlightFileKind = 'csv' | 'workbook';
 
@@ -46,8 +46,8 @@ export async function parseFlightFile(file: File): Promise<ParseResult> {
 
   const buffer = await file.arrayBuffer();
   const workbook = kind === 'csv'
-    ? XLSX.read(decodeCsvBytes(buffer), { type: 'string' })
-    : XLSX.read(buffer, { type: 'array' });
+    ? XLSX.read(decodeCsvBytes(buffer), { type: 'string', raw: true, sheetRows: MAX_IMPORT_WORKSHEET_ROWS + 1 })
+    : XLSX.read(buffer, { type: 'array', cellNF: true, sheets: 0, sheetRows: MAX_IMPORT_WORKSHEET_ROWS + 1 });
 
   return parseWorkbook(workbook);
 }

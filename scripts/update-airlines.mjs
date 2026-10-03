@@ -9,14 +9,11 @@ import {
   sha256,
   validateAirlineSearchIndex,
 } from './lib/airline-data.mjs';
+import { executeWikidataQuery, WIKIDATA_USER_AGENT as USER_AGENT } from './lib/wikidata-request.mjs';
 
 const outputPath = fileURLToPath(
   new URL('../src/data/generated/airlines.ts', import.meta.url),
 );
-const USER_AGENT =
-  'Personal-Flight-Log-Airline-Updater/1.0 '
-  + '(https://github.com/ga3ulkim/flight-log-manual)';
-const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 
 function parseArguments(argumentsList) {
   const options = { source: null };
@@ -30,45 +27,6 @@ function parseArguments(argumentsList) {
     }
   }
   return options;
-}
-
-function wait(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-async function executeWikidataQuery(query, queryIndex) {
-  const body = new URLSearchParams({
-    query,
-    format: 'json',
-  });
-
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const response = await fetch(WIKIDATA_AIRLINE_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/sparql-results+json',
-        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-        'User-Agent': USER_AGENT,
-      },
-      body,
-    });
-    if (response.ok) return response.json();
-    if (!RETRYABLE_STATUS_CODES.has(response.status) || attempt === 3) {
-      throw new Error(
-        `Wikidata query ${queryIndex + 1} failed: HTTP ${response.status}`,
-      );
-    }
-    const retryAfter = Number(response.headers.get('Retry-After'));
-    const delay = Number.isFinite(retryAfter) && retryAfter > 0
-      ? Math.min(retryAfter * 1_000, 15_000)
-      : attempt * 2_000;
-    console.warn(
-      `Wikidata query ${queryIndex + 1} returned HTTP ${response.status}; `
-      + `retrying in ${delay}ms.`,
-    );
-    await wait(delay);
-  }
-  throw new Error(`Wikidata query ${queryIndex + 1} exhausted its retries.`);
 }
 
 async function queryWikidata() {
@@ -93,6 +51,7 @@ async function readSource(source) {
   if (!source) return queryWikidata();
   if (/^https?:\/\//i.test(source)) {
     const response = await fetch(source, {
+      signal: AbortSignal.timeout(60_000),
       headers: {
         Accept: 'application/sparql-results+json',
         'User-Agent': USER_AGENT,

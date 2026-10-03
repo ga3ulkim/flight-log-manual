@@ -1,4 +1,5 @@
 import type { ManualFlightRecord } from '../lib/manualFlight';
+import type { Flight } from '../types';
 import {
   canEnterManualArchive,
   manualEntryEditControlId,
@@ -7,6 +8,8 @@ import {
 
 interface ManualEntryViewProps {
   records: readonly ManualFlightRecord[];
+  /** Shared parent derivation; standalone callers can still supply only records. */
+  orderedFlights?: readonly Flight[];
   onAddFlight: () => void;
   onEditFlight: (manualId: string) => void;
   onDeleteFlight: (manualId: string) => void;
@@ -21,6 +24,7 @@ function flightMetadata(airline: string, flightNumber: string, aircraft: string)
 
 export default function ManualEntryView({
   records,
+  orderedFlights,
   onAddFlight,
   onEditFlight,
   onDeleteFlight,
@@ -28,7 +32,7 @@ export default function ManualEntryView({
   onOpenDataManagement,
   onOpenDemo,
 }: ManualEntryViewProps) {
-  const flights = manualEntryFlights(records);
+  const flights = orderedFlights ?? manualEntryFlights(records);
   const canOpenArchive = canEnterManualArchive(records.length);
   const addLabel = records.length === 0 ? '+ 첫 비행 기록 추가' : '+ 비행 추가';
 

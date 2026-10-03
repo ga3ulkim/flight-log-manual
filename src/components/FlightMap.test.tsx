@@ -2,7 +2,7 @@ import { createRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { aggregateFlights, routeKey } from '../lib/analytics';
-import { MAP_HEIGHT, MAP_WIDTH, arcGeometry } from '../lib/geography';
+import { MAP_HEIGHT, MAP_WIDTH, arcGeometry, flightArcGeometry, quadraticPoint } from '../lib/geography';
 import { makeFlight } from '../testFixtures';
 import type { Flight, PlaybackState, RouteKey } from '../types';
 import FlightMap from './FlightMap';
@@ -80,6 +80,23 @@ function renderMap({
 }
 
 describe('FlightMap SVG layer structure', () => {
+  it('uses saved geometry for both the active route and aircraft, preserving the idle representative map', () => {
+    const flight = makeFlight({ fa: 'ICN', ta: 'NRT',
+      departureSnapshot: { latitude: 0, longitude: 0 },
+      arrivalSnapshot: { latitude: 0, longitude: 100 } });
+    const geometry = flightArcGeometry(flight);
+    const active = renderMap({ flights: [flight], currentFlight: flight,
+      currentRouteKey: routeKey('ICN', 'NRT'), playActive: true,
+      play: { ...IDLE_PLAYBACK, on: true, idx: 0, t: 0.5 } });
+    const [x, y] = quadraticPoint(geometry, 0.5);
+    expect(layerMarkup(active, 'routes')).toContain(`d="${geometry.d}"`);
+    expect(layerMarkup(active, 'vehicles')).toContain(`translate(${x},${y})`);
+    const idle = renderMap({ flights: [flight] });
+    expect(layerMarkup(idle, 'routes')).toContain(`d="${arcGeometry('ICN', 'NRT').d}"`);
+    expect(idle).toContain('같은 공항 코드의 위치가 기록마다 다릅니다.');
+    expect(renderMap({ flights: [makeFlight()] })).not.toContain('대표 위치로');
+  });
+
   it('renders global semantic layers in a stable paint order across all world copies', () => {
     const markup = renderMap({ flights: [makeFlight()] });
     const layerIndexes = MAP_LAYERS.map((layer) =>

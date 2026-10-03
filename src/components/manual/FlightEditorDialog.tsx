@@ -28,6 +28,7 @@ import {
   type ManualFlightRecord,
 } from '../../lib/manualFlight';
 import type { FlightType } from '../../types';
+import { manualFieldsFromSnapshot, manualSnapshot, updateManualAirportField, type ManualAirportFields } from '../../lib/manualAirportFields';
 import AirlineCombobox, { type AirlineSelection } from './AirlineCombobox';
 import { ConfirmDialog } from './ConfirmDialog';
 import { DialogShell } from './DialogShell';
@@ -35,16 +36,6 @@ import { DialogShell } from './DialogShell';
 type MaybePromise<T> = T | Promise<T>;
 type AirportRole = 'departure' | 'arrival';
 type FieldErrors = Record<string, string>;
-
-interface ManualAirportFields {
-  iata: string;
-  name: string;
-  municipality: string;
-  countryCode: string;
-  countryName: string;
-  latitude: string;
-  longitude: string;
-}
 
 interface AirportDraft {
   mode: 'search' | 'manual';
@@ -103,18 +94,6 @@ function emptyManualAirport(): ManualAirportFields {
   };
 }
 
-function manualFieldsFromSnapshot(snapshot: ManualAirportSnapshot): ManualAirportFields {
-  return {
-    iata: snapshot.iata,
-    name: snapshot.name,
-    municipality: snapshot.municipality,
-    countryCode: snapshot.countryCode,
-    countryName: snapshot.countryName,
-    latitude: snapshot.latitude == null ? '' : String(snapshot.latitude),
-    longitude: snapshot.longitude == null ? '' : String(snapshot.longitude),
-  };
-}
-
 function airportDraft(snapshot?: ManualAirportSnapshot): AirportDraft {
   return snapshot
     ? {
@@ -163,22 +142,6 @@ function airportIsReady(
     return draft.selected !== null || catalog?.findByIata(draft.query) !== undefined;
   }
   return /^[A-Za-z]{3}$/.test(draft.manual.iata.trim());
-}
-
-function coordinateValue(value: string): number | null {
-  return value.trim() === '' ? null : Number(value);
-}
-
-function manualSnapshot(fields: ManualAirportFields): ManualAirportSnapshot {
-  return {
-    iata: fields.iata.trim().toUpperCase(),
-    name: fields.name.trim(),
-    municipality: fields.municipality.trim(),
-    countryCode: fields.countryCode.trim().toUpperCase(),
-    countryName: fields.countryName.trim(),
-    latitude: coordinateValue(fields.latitude),
-    longitude: coordinateValue(fields.longitude),
-  };
 }
 
 function knownSnapshot(entry: AirportSearchEntry): ManualAirportSnapshot {
@@ -282,10 +245,10 @@ function AirportField({
     setListOpen(false);
   };
 
-  const updateManual = (key: keyof ManualAirportFields, value: string) => {
+  const updateManual = (key: Exclude<keyof ManualAirportFields, 'timezoneId'>, value: string) => {
     onChange({
       ...draft,
-      manual: { ...draft.manual, [key]: value },
+      manual: updateManualAirportField(draft.manual, key, value),
     });
   };
 

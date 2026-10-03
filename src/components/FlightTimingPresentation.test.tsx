@@ -45,6 +45,12 @@ function playbackMarkup(hold = 0, currentFlight = timedFlight): string {
 }
 
 describe('saved and estimated time presentation', () => {
+  it('keeps overall progress at the completed-flight boundary throughout transfers', () => {
+    expect(playbackMarkup(2_000)).toContain('aria-valuenow="50"');
+    expect(playbackMarkup(1_000)).toContain('aria-valuenow="50"');
+    expect(playbackMarkup(1)).toContain('aria-valuenow="50"');
+  });
+
   it('shows timezone-aware departure, arrival, and duration on aircraft playback', () => {
     const timing = estimateFlightTiming(timedFlight);
     expect(timing.status).toBe('available');

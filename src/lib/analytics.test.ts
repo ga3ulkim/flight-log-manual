@@ -3,12 +3,29 @@ import { makeFlight } from '../testFixtures';
 import {
   aggregateFlights,
   aggregateLiveFlights,
+  activeRankingNames,
   rankingData,
   routeKey,
   topAirportLabels,
 } from './analytics';
 
 describe('flight analytics', () => {
+  it('counts countries by saved ISO identity while keeping display labels consistent', () => {
+    const first = makeFlight({ fc: '대한민국', tc: 'KR', type: '국내선',
+      departureSnapshot: { countryCode: 'KR', countryName: '대한민국' },
+      arrivalSnapshot: { countryCode: 'KR', countryName: '' } });
+    const second = makeFlight({ id: 2, fc: 'Korea', tc: 'Japan',
+      departureSnapshot: { countryCode: 'KR', countryName: 'Korea' },
+      arrivalSnapshot: { countryCode: 'JP', countryName: 'Japan' } });
+    const all = aggregateFlights([first, second]);
+    expect(all.countries.size).toBe(2);
+    expect(rankingData(all, '국가')).toEqual([['대한민국', 2], ['Japan', 1]]);
+    const live = aggregateLiveFlights([first, second], 1, 1)!;
+    expect(live.countries).toBe(2);
+    expect(rankingData(live, '국가')).toEqual(rankingData(all, '국가'));
+    expect(activeRankingNames(live, second, '국가')).toEqual(new Set(['대한민국', 'Japan']));
+  });
+
   const flights = [
     makeFlight({
       id: 0,

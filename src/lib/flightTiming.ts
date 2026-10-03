@@ -1,7 +1,6 @@
 import { Temporal } from 'temporal-polyfill';
-import type { AirportCoordinate } from '../data/airports';
 import type { Flight } from '../types';
-import { AIRPORTS, haversine } from './geography';
+import { flightCoordinate, haversine } from './geography';
 
 /**
  * A deliberately small, deterministic block-time approximation. It models a
@@ -53,17 +52,6 @@ export type EstimatedFlightTiming =
       durationMinutes?: number;
     };
 
-interface FlightWithOptionalSnapshots extends Flight {
-  departureSnapshot?: {
-    latitude?: number | null;
-    longitude?: number | null;
-  };
-  arrivalSnapshot?: {
-    latitude?: number | null;
-    longitude?: number | null;
-  };
-}
-
 function twoDigits(value: number): string {
   return String(value).padStart(2, '0');
 }
@@ -74,25 +62,6 @@ function localDateTime(value: Temporal.ZonedDateTime): EstimatedLocalDateTime {
     time: `${twoDigits(value.hour)}:${twoDigits(value.minute)}`,
     timeZoneId: value.timeZoneId,
   };
-}
-
-function snapshotCoordinate(
-  flight: FlightWithOptionalSnapshots,
-  endpoint: 'departure' | 'arrival',
-): AirportCoordinate | undefined {
-  const snapshot = endpoint === 'departure'
-    ? flight.departureSnapshot
-    : flight.arrivalSnapshot;
-  if (
-    snapshot
-    && typeof snapshot.latitude === 'number'
-    && Number.isFinite(snapshot.latitude)
-    && typeof snapshot.longitude === 'number'
-    && Number.isFinite(snapshot.longitude)
-  ) {
-    return [snapshot.latitude, snapshot.longitude];
-  }
-  return AIRPORTS[endpoint === 'departure' ? flight.fa : flight.ta];
 }
 
 function canonicalDepartureDate(flight: Flight): string | undefined {
@@ -175,9 +144,8 @@ export function estimateFlightDurationMinutes(distanceKm: number): number {
  * This does not alter symbolic playback duration or animation speed.
  */
 export function estimateFlightTiming(flight: Flight): EstimatedFlightTiming {
-  const timingFlight = flight as FlightWithOptionalSnapshots;
-  const departureCoordinate = snapshotCoordinate(timingFlight, 'departure');
-  const arrivalCoordinate = snapshotCoordinate(timingFlight, 'arrival');
+  const departureCoordinate = flightCoordinate(flight, 'departure');
+  const arrivalCoordinate = flightCoordinate(flight, 'arrival');
   if (!departureCoordinate || !arrivalCoordinate) {
     return { status: 'unavailable', reason: 'missing_coordinates' };
   }
